@@ -12,7 +12,7 @@ X_y = synth.PredictionInfluenceStream(
          synth.RandomRBF(seed_model=41, seed_sample=49, n_classes=2, n_features=4, n_centroids=20)])
 
 model = preprocessing.StandardScaler()
-model = tree.HoeffdingAdaptiveTreeClassifier(grace_period=100, split_confidence=1e-5, leaf_prediction='nb', nb_threshold=10, seed=0)
+model |= tree.HoeffdingAdaptiveTreeClassifier(grace_period=100, split_confidence=1e-5, leaf_prediction='nb', nb_threshold=10, seed=0)
 
 metric = metrics.Accuracy()
 
