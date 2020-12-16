@@ -8,9 +8,9 @@ from river.utils.skmultiflow_utils import check_random_state
 import random
 
 
-class predictionInfluenceStream(base.SyntheticDataset):
+class PredictionInfluenceStream(base.SyntheticDataset):
 
-    def __init__(self, stream: [Agrawal(seed=112), 
+    def __init__(self, stream= [Agrawal(seed=112), 
                                 Agrawal(seed=112,
                                 classification_function=2)],
                  seed: int = None,
@@ -24,11 +24,9 @@ class predictionInfluenceStream(base.SyntheticDataset):
                                  f"{stream.__name__} ({stream[0].n_features}) and "
                                  f"{stream.__name__} ({stream[1].n_features}).")
         super().__init__(n_features=stream[0].n_features, n_classes=stream[0].n_classes,
-                         n_outputs=stream[0].n_outputs, task=stream[0].task)
+                         n_outputs=stream[0].n_outputs, task=stream[0].task, n_samples = stream[0].n_samples)
 
-        self.n_samples = stream.n_samples
         self.stream = stream
-        self.drift_stream = drift_stream
         self.weight = weight
         self.weight_tracker = []
         self.weight_tracker_dynamic = []
@@ -38,6 +36,7 @@ class predictionInfluenceStream(base.SyntheticDataset):
         self.cache = []
         self.influence_method = influence_method
         self.n_streams = len(stream)
+        self.seed = seed
 
         self.set_weight()
         self.set_influence_method()
@@ -45,7 +44,7 @@ class predictionInfluenceStream(base.SyntheticDataset):
 
     def set_weight(self):
         if self.weight is None:
-            counter = len(self.streams)
+            counter = len(self.stream)
             start = [1] * counter
             self.weight = [1] * counter
         self.weight_tracker = [start]
@@ -57,18 +56,20 @@ class predictionInfluenceStream(base.SyntheticDataset):
 
     def __iter__(self):
         rng = check_random_state(self.seed)
-        # stream_generator = iter(self.stream)
-        # drift_stream_generator = iter(self.drift_stream)
         sample_idx = 0
+        n_streams = list(range(self.n_streams))
+        normalized_weights = [float(i) / max(self.weight) for i in self.weight]
+        instance_generator = []
+        for i in range(self.n_streams):
+            instance_generator.append(iter(self.stream[i]))
 
         while True:
             sample_idx += 1
-            normalized_weights = [float(i) / max(self.weight) for i in self.weight]
-            probability = random.choices(self.n_streams, normalized_weight)
+            probability = random.choices(n_streams, normalized_weights)
             current_stream = probability[0]
-            instance_generator = iter(self.stream[current_stream])
             try:
-                x, y = next(instance_generator)
+                print("chosen stream: ", current_stream)
+                x, y = next(instance_generator[current_stream])
             except StopIteration:
                 break
             yield x, y
