@@ -15,8 +15,8 @@ class PredictionInfluenceStream(base.SyntheticDataset):
                                 classification_function=2)],
                  seed: int = None,
                  weight: list =None,
-                 weight_correct=1.1,
-                 weight_incorrect=0.9,
+                 weight_correct=1.001,
+                 weight_incorrect=0.999,
                  influence_method="multiplication"):
         # Fairly simple check for consistent number of features
         if stream[0].n_features != stream[1].n_features:
@@ -37,6 +37,7 @@ class PredictionInfluenceStream(base.SyntheticDataset):
         self.influence_method = influence_method
         self.n_streams = len(stream)
         self.seed = seed
+        self.source_stream = []
 
         self.set_weight()
         self.set_influence_method()
@@ -67,44 +68,47 @@ class PredictionInfluenceStream(base.SyntheticDataset):
             sample_idx += 1
             probability = random.choices(n_streams, normalized_weights)
             current_stream = probability[0]
+            self.source_stream.append(current_stream)
             try:
-                print("chosen stream: ", current_stream)
                 x, y = next(instance_generator[current_stream])
             except StopIteration:
                 break
             yield x, y
     
-    def receive_feedback(self, y_true, y_pred, x_features, stream):
-        if isinstance(y_true, int) and isinstance(y_pred, int):
+    def receive_feedback(self, y_true, y_pred, x_features):
+        if isinstance(y_true, int):
+            # and isinstance(y_pred, int)
             y_true, y_pred, x_features = [y_true], [y_pred], [x_features]
         for i in range(len(y_true)):
             if y_true[i] is not None:
                 if len(self.cache) == 0 or (y_pred[i] == self.cache[0][0] and x_features[i] == self.cache[0][1]):
-                    self.receive_feedback_update(y_true[i], y_pred[i], stream[i])
+                    self.receive_feedback_update(y_true[i], y_pred[i], self.source_stream[i])
                     if len(self.cache) != 0:
                         self.cache.remove(self.cache[0])
                         while len(self.cache[0]) == 4:
-                            self.receive_feedback_update(y_true[i], y_pred[i], stream[i])
+                            self.receive_feedback_update(y_true[i], y_pred[i], self.source_stream[i])
                             self.cache.remove(self.cache[0])
                 else:
-                    wait_for_feedback = [y_pred[i], x_features[i], y_true[i], stream[i]]
+                    wait_for_feedback = [y_pred[i], x_features[i], y_true[i], self.source_stream[i]]
                     self.cache.append(wait_for_feedback)
             else:
-                no_label = [y_pred[i], x_features[i], stream[i]]
+                no_label = [y_pred[i], x_features[i], self.source_stream[i]]
                 self.cache.append(no_label)
+        self.source_stream = []
 
     def receive_feedback_update(self, y_true, y_pred, stream):
         if y_true == y_pred:
             if self.influence_method == "multiplication":
-                self.weight[stream] = self.weight[stream] * self.self_fulfilling
+                self.weight[stream] = self.weight[stream] * self.weight_correct
             else:
-                self.weight[stream] = self.weight[stream] + self.self_fulfilling
+                self.weight[stream] = self.weight[stream] + self.weight_correct
         else:
             if self.influence_method == "multiplication":
-                self.weight[stream] = self.weight[stream] * self.self_defeating
+                self.weight[stream] = self.weight[stream] * self.weight_incorrect
             else:
-                self.weight[stream] = self.weight[stream] + self.self_defeating
+                self.weight[stream] = self.weight[stream] + self.weight_incorrect
         self.weight_tracker_dynamic.append(self.weight.copy())
+        #print(self.weight_tracker_dynamic)
 
 
     def __repr__(self):

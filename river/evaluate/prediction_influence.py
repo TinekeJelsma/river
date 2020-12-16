@@ -6,7 +6,7 @@ from river import base
 from river import metrics
 from river import utils
 from river import stream
-from river.datasets.synth.prediction_influenced_stream import predictionInfluenceStream
+from river.datasets.synth.prediction_influenced_stream import PredictionInfluenceStream
 
 
 __all__ = ['evaluate_influential']
@@ -15,7 +15,7 @@ __all__ = ['evaluate_influential']
 def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Metric,
                           moment: typing.Union[str, typing.Callable] = None,
                           delay: typing.Union[str, int, dt.timedelta, typing.Callable] = None,
-                          print_every=0, show_time=False, show_memory=False,
+                          print_every=0, max_samples: int = 100, show_time=False, show_memory=False,
                           **print_kwargs) -> metrics.Metric:
 
 
@@ -29,7 +29,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
         pred_func = model.predict_proba_one
 
     preds = {}
-
+    cm = metrics.ConfusionMatrix()
     n_total_answers = 0
     if show_time:
         start = time.perf_counter()
@@ -45,7 +45,10 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
         y_pred = preds.pop(i)
         if y_pred != {} and y_pred is not None:
             metric.update(y_true=y, y_pred=y_pred)
-            dataset.receive_feedback()
+            cm.update(y, y_pred)
+            if isinstance(dataset, PredictionInfluenceStream):
+                dataset.receive_feedback(y_true=y, y_pred=y_pred, x_features=x)
+                # print(dataset.weight)
         model.learn_one(x=x, y=y)
 
         # Update the answer counter
@@ -59,4 +62,9 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                 msg += f' – {model._memory_usage}'
             print(msg, **print_kwargs)
 
+        if n_total_answers > max_samples:
+            print(cm)
+            return metric
+
     return metric
+
