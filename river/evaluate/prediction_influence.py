@@ -7,6 +7,8 @@ from river import metrics
 from river import utils
 from river import stream
 from river.datasets.synth.prediction_influenced_stream import PredictionInfluenceStream
+from scipy.stats import ranksums
+
 
 
 __all__ = ['evaluate_influential']
@@ -16,7 +18,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                           moment: typing.Union[str, typing.Callable] = None,
                           delay: typing.Union[str, int, dt.timedelta, typing.Callable] = None,
                           print_every=0, max_samples: int = 100, comparison_block: int = 100, 
-                          intervals: int = 6, show_time=False, show_memory=False,
+                          prior: int = 1, intervals: int = 6, show_time=False, show_memory=False,
                           **print_kwargs) -> metrics.Metric:
 
 
@@ -100,29 +102,48 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             chunk_tracker+=1
             # empty bins
             TP, FP, FN, TN = [], [], [], []
+            cm_values = [TP, FP, FN, TN]
+
         
         if chunk_tracker >=2:
-            print(hist_info)
             # this means we can start comparing the densities
             first_chunk = chunk_tracker-2
             second_chunk = chunk_tracker-1
+            vars()['comparison' + str(first_chunk)] = {} 
+            names = ['TP-', 'FP-', 'FN-', 'TN-']
             # calculate subset for TP
+            for classification in names:
+                for feature in range(len(x)):
+                    name_first = classification + str(first_chunk) + '-' + str(feature)
+                    name_second = classification + str(second_chunk) + '-' + str(feature)
+                    count_first_chunk = np.array(hist_info[name_first].get('hist_values') + prior)
+                    count_second_chunk = hist_info[name_second].get('hist_values') + prior
+                    densities = np.array(count_second_chunk) - count_first_chunk
+                    densities = densities/ count_first_chunk
+                    subset = []
+                    for bin in range(intervals):
+                        subset.extend([densities[bin]]*count_first_chunk[bin])
+                    name = classification + str(feature)
+                    vars()['comparison' + str(first_chunk)][name] = {}
+                    vars()['comparison' + str(first_chunk)][name]['subset'] = subset
+            # print(vars()['comparison' + str(first_chunk)])
+            comparison = vars()['comparison' + str(first_chunk)]
+
+            # compare density of TP and FN
             for feature in range(len(x)):
-                name_first = 'TP-' + str(first_chunk) + '-' + str(feature)
-                name_second = 'TP-' + str(second_chunk) + '-' + str(feature)
-                # zip_object = zip(hist_info[name_second].get('hist_values'), hist_info[name_first].get('hist_values'))
-                # densities = []
-                # for chunk1, chunk0 in zip_object:
-                #     density.append(chunk1-chunk0)
-                print(name_first)
-                print(np.array(hist_info[name_first].get('hist_values')))
-                densities = np.array(hist_info[name_second].get('hist_values'))- hist_info[name_first].get('hist_values')
-                densities = np.array(densities)/ np.array(hist_info[name_first].get('hist_values'))
-                print(densities)
+                print('feature: ', feature)
+                test = ranksums(comparison['TP-' + str(feature)].get('subset'), comparison['FN-' + str(feature)].get('subset'))
+                print('p value TP FN ', test.pvalue)
+
+                test = ranksums(comparison['TN-' + str(feature)].get('subset'), comparison['FP-' + str(feature)].get('subset'))
+                print('p value TP FN ', test.pvalue)
+
+
+
 
         if n_total_answers > max_samples:
             print(cm)
-            print("hist_info: ", hist_info)
+            # print("hist_info: ", hist_info)
             return metric
 
     return metric
