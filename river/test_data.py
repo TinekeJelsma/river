@@ -16,4 +16,4 @@ model |= tree.HoeffdingAdaptiveTreeClassifier(grace_period=100, split_confidence
 
 metric = metrics.Accuracy()
 
-evaluate.evaluate_influential(X_y, model, metric, print_every=100)
+evaluate.evaluate_influential(X_y, model, metric, print_every=100, comparison_block = 50, intervals = 6, max_samples=100)
