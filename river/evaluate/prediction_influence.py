@@ -30,6 +30,9 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
     pred_func = model.predict_one
     if utils.inspect.isclassifier(model) and not metric.requires_labels:
         pred_func = model.predict_proba_one
+    
+    #def is_categorical(array_like):
+    #    return array_like.dtype.name == 'category'
 
     preds = {}
     hist0 = []
@@ -90,15 +93,27 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             for feature in range(len(x)):
                 index=0
                 for cm_value in cm_values:
-                    hist, edges = np.histogram([value.get(feature) for value in cm_value], bins = intervals)
-                    dict_name = cm_names[index] + '-' + str(chunk_tracker) + '-' + str(feature)
-                    hist_info[dict_name] = {}
-                    hist_info[dict_name]['classification'] = cm_names[index]
-                    hist_info[dict_name]['chunk'] = chunk_tracker
-                    hist_info[dict_name]['feature'] = feature
-                    hist_info[dict_name]['hist_values'] = hist
-                    hist_info[dict_name]['edges'] = edges
+                    feature_values = [value.get(feature) for value in cm_value]                    
+                    values, counts = np.unique(feature_values, return_counts=True) 
+                    if all(isinstance(n, str) for n in feature_values) or len(counts) <10:
+                        dict_name = cm_names[index] + '-' + str(chunk_tracker) + '-' + str(feature)
+                        hist_info[dict_name] = {}
+                        hist_info[dict_name]['classification'] = cm_names[index]
+                        hist_info[dict_name]['chunk'] = chunk_tracker
+                        hist_info[dict_name]['feature'] = feature
+                        hist_info[dict_name]['counts'] = counts
+                        hist_info[dict_name]['edges'] = values
+                    else:
+                        counts, edges = np.histogram(feature_values, bins = intervals)
+                        dict_name = cm_names[index] + '-' + str(chunk_tracker) + '-' + str(feature)
+                        hist_info[dict_name] = {}
+                        hist_info[dict_name]['classification'] = cm_names[index]
+                        hist_info[dict_name]['chunk'] = chunk_tracker
+                        hist_info[dict_name]['feature'] = feature
+                        hist_info[dict_name]['counts'] = counts
+                        hist_info[dict_name]['edges'] = edges
                     index+=1
+
             chunk_tracker+=1
             # empty bins
             TP, FP, FN, TN = [], [], [], []
@@ -116,8 +131,8 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                 for feature in range(len(x)):
                     name_first = classification + str(first_chunk) + '-' + str(feature)
                     name_second = classification + str(second_chunk) + '-' + str(feature)
-                    count_first_chunk = np.array(hist_info[name_first].get('hist_values') + prior)
-                    count_second_chunk = hist_info[name_second].get('hist_values') + prior
+                    count_first_chunk = np.array(hist_info[name_first].get('counts') + prior)
+                    count_second_chunk = hist_info[name_second].get('counts') + prior
                     densities = np.array(count_second_chunk) - count_first_chunk
                     densities = densities/ count_first_chunk
                     subset = []
