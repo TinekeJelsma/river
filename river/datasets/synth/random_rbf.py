@@ -3,6 +3,7 @@ import warnings
 
 from .. import base
 from river.utils.skmultiflow_utils import check_random_state
+import random as random
 
 
 class RandomRBF(base.SyntheticDataset):
@@ -63,6 +64,7 @@ class RandomRBF(base.SyntheticDataset):
         n_classes: int = 2,
         n_features: int = 10,
         n_centroids: int = 50,
+        class_weights: list = []
     ):
         super().__init__(
             n_features=n_features, n_classes=n_classes, n_outputs=1, task=base.MULTI_CLF
@@ -71,9 +73,12 @@ class RandomRBF(base.SyntheticDataset):
         self.seed_model = seed_model
         self.n_num_features = n_features
         self.n_centroids = n_centroids
+        self.class_weights = class_weights
         self.centroids = None
         self.centroid_weights = None
         self.target_values = [i for i in range(self.n_classes)]
+        if len(self.class_weights) != self.n_classes:
+            self.class_weights = np.zeros(n_classes) + 1 / self.n_classes
 
     def __iter__(self):
         self._generate_centroids()
@@ -114,7 +119,8 @@ class RandomRBF(base.SyntheticDataset):
             for j in range(self.n_num_features):
                 rand_centre.append(rng_model.rand())
             self.centroids[i].centre = rand_centre
-            self.centroids[i].class_label = rng_model.randint(self.n_classes)
+            label = random.choices(range(self.n_classes), weights=self.class_weights, k=1)
+            self.centroids[i].class_label = label[0]
             self.centroids[i].std_dev = rng_model.rand()
             self.centroid_weights.append(rng_model.rand())
 
@@ -180,6 +186,7 @@ class RandomRBFDrift(RandomRBF):
         n_classes: int = 2,
         n_features: int = 10,
         n_centroids: int = 50,
+        class_weights: list = [],
         change_speed: float = 0.0,
         n_drift_centroids: int = 50,
     ):
@@ -189,6 +196,7 @@ class RandomRBFDrift(RandomRBF):
             n_classes=n_classes,
             n_features=n_features,
             n_centroids=n_centroids,
+            class_weights = class_weights
         )
         self.change_speed = change_speed
         if n_drift_centroids <= n_centroids:
