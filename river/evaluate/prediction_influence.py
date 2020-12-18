@@ -105,7 +105,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             cm_values = [TP, FP, FN, TN]
 
         
-        if chunk_tracker >=2:
+        if chunk_tracker >=2 and n_total_answers % comparison_block == 0:
             # this means we can start comparing the densities
             first_chunk = chunk_tracker-2
             second_chunk = chunk_tracker-1
@@ -138,11 +138,9 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                 test = ranksums(comparison['TN-' + str(feature)].get('subset'), comparison['FP-' + str(feature)].get('subset'))
                 print('p value TP FN ', test.pvalue)
 
-
-
-
         if n_total_answers > max_samples:
             print(cm)
+            print(dataset.weight)
             # print("hist_info: ", hist_info)
             return metric
 

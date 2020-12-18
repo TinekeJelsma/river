@@ -7,13 +7,17 @@ from river import tree
 from river import compose
 from river import optim
 
-X_y = synth.PredictionInfluenceStream(
-         stream= [synth.RandomRBF(seed_model=42, seed_sample=42, n_classes=2, n_features=4, n_centroids=20), 
-         synth.RandomRBF(seed_model=41, seed_sample=49, n_classes=2, n_features=4, n_centroids=20)])
+streams = []
+
+for x in range(5):
+    streams.append(synth.RandomRBF(seed_model=30+x, seed_sample=30, n_classes=2, n_features=4, n_centroids=20, class_weights=[0,1]))
+    streams.append(synth.RandomRBF(seed_model=50+x, seed_sample=30, n_classes=2, n_features=4, n_centroids=20, class_weights=[1,0]))
+
+X_y = synth.PredictionInfluenceStream(stream= streams)
 
 model = preprocessing.StandardScaler()
 model |= tree.HoeffdingAdaptiveTreeClassifier(grace_period=100, split_confidence=1e-5, leaf_prediction='nb', nb_threshold=10, seed=0)
 
 metric = metrics.Accuracy()
 
-evaluate.evaluate_influential(X_y, model, metric, print_every=100, comparison_block = 100, intervals = 4, max_samples=200, prior = 1)
+evaluate.evaluate_influential(X_y, model, metric, print_every=100, comparison_block = 100, intervals = 4, max_samples=400, prior = 1)

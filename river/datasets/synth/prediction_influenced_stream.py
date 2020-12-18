@@ -29,7 +29,6 @@ class PredictionInfluenceStream(base.SyntheticDataset):
         self.stream = stream
         self.weight = weight
         self.weight_tracker = []
-        self.weight_tracker_dynamic = []
         self.last_stream = None
         self.weight_correct = weight_correct
         self.weight_incorrect = weight_incorrect
@@ -49,7 +48,6 @@ class PredictionInfluenceStream(base.SyntheticDataset):
             start = [1] * counter
             self.weight = [1] * counter
         self.weight_tracker = [start]
-        self.weight_tracker_dynamic = [start]
 
     def set_influence_method(self):
         if self.influence_method != "multiplication" and self.influence_method != "addition":
@@ -107,8 +105,8 @@ class PredictionInfluenceStream(base.SyntheticDataset):
                 self.weight[stream] = self.weight[stream] * self.weight_incorrect
             else:
                 self.weight[stream] = self.weight[stream] + self.weight_incorrect
-        self.weight_tracker_dynamic.append(self.weight.copy())
-        #print(self.weight_tracker_dynamic)
+        self.weight_tracker.append(self.weight.copy())
+        #print(self.weight_tracker)
 
 
     def __repr__(self):
