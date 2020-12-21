@@ -8,6 +8,7 @@ from river import utils
 from river import stream
 from river.datasets.synth.prediction_influenced_stream import PredictionInfluenceStream
 from scipy.stats import ranksums
+import matplotlib.pyplot as plt
 
 
 
@@ -91,27 +92,32 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
         if n_total_answers % comparison_block == 0:
             # fill all bins
             for feature in range(len(x)):
+                feature_number = feature
                 index=0
+                if hasattr(dataset, "feature_names"):
+                    feature = dataset.feature_names[feature]
                 for cm_value in cm_values:
-                    feature_values = [value.get(feature) for value in cm_value]                    
-                    values, counts = np.unique(feature_values, return_counts=True) 
-                    if all(isinstance(n, str) for n in feature_values) or len(counts) <10:
-                        dict_name = cm_names[index] + '-' + str(chunk_tracker) + '-' + str(feature)
+                    feature_values = [value.get(feature) for value in cm_value]
+                    values, counts = np.unique(feature_values, return_counts=True)
+                    if all(isinstance(feature_value, str) for feature_value in feature_values) or len(counts) <5:
+                        dict_name = cm_names[index] + '-' + str(chunk_tracker) + '-' + str(feature_number)
                         hist_info[dict_name] = {}
                         hist_info[dict_name]['classification'] = cm_names[index]
                         hist_info[dict_name]['chunk'] = chunk_tracker
-                        hist_info[dict_name]['feature'] = feature
+                        hist_info[dict_name]['feature'] = feature_number
                         hist_info[dict_name]['counts'] = counts
                         hist_info[dict_name]['edges'] = values
                     else:
                         counts, edges = np.histogram(feature_values, bins = intervals)
-                        dict_name = cm_names[index] + '-' + str(chunk_tracker) + '-' + str(feature)
+                        dict_name = cm_names[index] + '-' + str(chunk_tracker) + '-' + str(feature_number)
                         hist_info[dict_name] = {}
                         hist_info[dict_name]['classification'] = cm_names[index]
                         hist_info[dict_name]['chunk'] = chunk_tracker
-                        hist_info[dict_name]['feature'] = feature
+                        hist_info[dict_name]['feature'] = feature_number
                         hist_info[dict_name]['counts'] = counts
                         hist_info[dict_name]['edges'] = edges
+                        # plt.hist(feature_values, bins = intervals)
+                        # plt.show()
                     index+=1
 
             chunk_tracker+=1
@@ -132,8 +138,8 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                     name_first = classification + str(first_chunk) + '-' + str(feature)
                     name_second = classification + str(second_chunk) + '-' + str(feature)
                     count_first_chunk = np.array(hist_info[name_first].get('counts') + prior)
-                    count_second_chunk = hist_info[name_second].get('counts') + prior
-                    densities = np.array(count_second_chunk) - count_first_chunk
+                    count_second_chunk = np.array(hist_info[name_second].get('counts') + prior)
+                    densities = count_second_chunk - count_first_chunk
                     densities = densities/ count_first_chunk
                     subset = []
                     for bin in range(intervals):
@@ -144,7 +150,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             # print(vars()['comparison' + str(first_chunk)])
             comparison = vars()['comparison' + str(first_chunk)]
 
-            # compare density of TP and FN
+            # compare density of TP and FN, and TN and FP
             for feature in range(len(x)):
                 print('feature: ', feature)
                 test = ranksums(comparison['TP-' + str(feature)].get('subset'), comparison['FN-' + str(feature)].get('subset'))
@@ -152,6 +158,26 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
 
                 test = ranksums(comparison['TN-' + str(feature)].get('subset'), comparison['FP-' + str(feature)].get('subset'))
                 print('p value TP FN ', test.pvalue)
+        
+            # visualize the distribution of data in hists:
+            for classification in names:
+                for feature in range(len(x)):
+                    name_first = classification + str(first_chunk) + '-' + str(feature)
+                    name_second = classification + str(second_chunk) + '-' + str(feature)
+                    count_first_chunk = np.array(hist_info[name_first].get('counts') + prior)
+                    count_second_chunk = hist_info[name_second].get('counts') + prior
+                    edges_first_chunk = hist_info[name_first].get('edges')
+                    edges_second_chunk = hist_info[name_second].get('edges')
+                    # fig, (ax1, ax2) = plt.subplots(1, 2)
+                    # title = classification + "feature" + str(feature)
+                    # ax1.bar(edges_first_chunk[:-1], count_first_chunk, width=1, color='green')
+                    # ax2.bar(edges_second_chunk[:-1], count_second_chunk, width = 1, color='blue')
+                    # fig.suptitle(title)
+
+                    plt.bar(edges_first_chunk[:-1]-0.2, count_first_chunk, width=0.2, color='g')
+                    plt.bar(edges_second_chunk[:-1], count_second_chunk, width = 0.2, color='b')
+                    plt.show()
+
 
         if n_total_answers > max_samples:
             print(cm)

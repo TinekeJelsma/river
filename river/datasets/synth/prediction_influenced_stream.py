@@ -25,7 +25,8 @@ class PredictionInfluenceStream(base.SyntheticDataset):
                                  f"{stream.__name__} ({stream[1].n_features}).")
         super().__init__(n_features=stream[0].n_features, n_classes=stream[0].n_classes,
                          n_outputs=stream[0].n_outputs, task=stream[0].task, n_samples = stream[0].n_samples)
-
+        if hasattr(stream[0], 'feature_names'):
+            self.feature_names = stream[0].feature_names
         self.stream = stream
         self.weight = weight
         self.weight_tracker = []
