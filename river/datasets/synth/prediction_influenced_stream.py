@@ -15,11 +15,12 @@ class PredictionInfluenceStream(base.SyntheticDataset):
                                 classification_function=2)],
                  seed: int = None,
                  weight: list =None,
-                 weight_correct=1.001,
-                 weight_incorrect=0.999,
-                 influence_method="multiplication"):
+                 weight_correct=0.99,
+                 weight_incorrect=1.01,
+                 influence_method="multiplication",
+                 weight_update: int = 1):
         # Fairly simple check for consistent number of features
-        if stream[0].n_features != stream[1].n_features:
+        if  len(stream) >1 and stream[0].n_features != stream[1].n_features:
             raise AttributeError(f"Inconsistent number of features between "
                                  f"{stream.__name__} ({stream[0].n_features}) and "
                                  f"{stream.__name__} ({stream[1].n_features}).")
@@ -28,7 +29,9 @@ class PredictionInfluenceStream(base.SyntheticDataset):
         if hasattr(stream[0], 'feature_names'):
             self.feature_names = stream[0].feature_names
         self.stream = stream
+        self.temp_weight = []
         self.weight = weight
+        self.weight_update = weight_update
         self.weight_tracker = []
         self.last_stream = None
         self.weight_correct = weight_correct
@@ -38,6 +41,7 @@ class PredictionInfluenceStream(base.SyntheticDataset):
         self.n_streams = len(stream)
         self.seed = seed
         self.source_stream = []
+        self.idx = 0
 
         self.set_weight()
         self.set_influence_method()
@@ -48,7 +52,10 @@ class PredictionInfluenceStream(base.SyntheticDataset):
             counter = len(self.stream)
             start = [1] * counter
             self.weight = [1] * counter
-        self.weight_tracker = [start]
+            self.weight_tracker = [start]
+            self.temp_weight = [1] * counter
+        else:
+            self.temp_weight = self.weight.copy()
 
     def set_influence_method(self):
         if self.influence_method != "multiplication" and self.influence_method != "addition":
@@ -98,15 +105,18 @@ class PredictionInfluenceStream(base.SyntheticDataset):
     def receive_feedback_update(self, y_true, y_pred, stream):
         if y_true == y_pred:
             if self.influence_method == "multiplication":
-                self.weight[stream] = self.weight[stream] * self.weight_correct
+                self.temp_weight[stream] = self.temp_weight[stream] * self.weight_correct
             else:
-                self.weight[stream] = self.weight[stream] + self.weight_correct
+                self.temp_weight[stream] = self.temp_weight[stream] + self.weight_correct
         else:
             if self.influence_method == "multiplication":
-                self.weight[stream] = self.weight[stream] * self.weight_incorrect
+                self.temp_weight[stream] = self.temp_weight[stream] * self.weight_incorrect
             else:
-                self.weight[stream] = self.weight[stream] + self.weight_incorrect
+                self.temp_weight[stream] = self.temp_weight[stream] + self.weight_incorrect
         self.weight_tracker.append(self.weight.copy())
+        if self.idx % self.weight_update == 0:
+            self.weight = self.temp_weight.copy()
+        self.idx += 1
         #print(self.weight_tracker)
 
 
