@@ -24,6 +24,7 @@ from .sea import SEA
 from .sine import Sine
 from .stagger import STAGGER
 from .waveform import Waveform
+from .prediction_influenced_stream import PredictionInfluenceStream
 
 
 __all__ = [
@@ -46,4 +47,5 @@ __all__ = [
     "Sine",
     "STAGGER",
     "Waveform",
+    "PredictionInfluenceStream"
 ]
