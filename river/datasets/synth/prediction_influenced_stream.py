@@ -42,6 +42,8 @@ class PredictionInfluenceStream(base.SyntheticDataset):
         self.seed = seed
         self.source_stream = []
         self.idx = 0
+        self.flag1 = False
+        self.flag2 = False
 
         self.set_weight()
         self.set_influence_method()
@@ -55,7 +57,9 @@ class PredictionInfluenceStream(base.SyntheticDataset):
             self.weight_tracker = [start]
             self.temp_weight = [1] * counter
         else:
+            self.weight = self.weight
             self.temp_weight = self.weight.copy()
+            self.weight_tracker = [self.weight.copy()]
 
     def set_influence_method(self):
         if self.influence_method != "multiplication" and self.influence_method != "addition":
@@ -65,15 +69,17 @@ class PredictionInfluenceStream(base.SyntheticDataset):
         rng = check_random_state(self.seed)
         sample_idx = 0
         n_streams = list(range(self.n_streams))
-        normalized_weights = [float(i) / max(self.weight) for i in self.weight]
+        print("n_streams: ", n_streams)
         instance_generator = []
         for i in range(self.n_streams):
             instance_generator.append(iter(self.stream[i]))
 
         while True:
+            normalized_weights = [float(i) / max(self.weight) for i in self.weight]
             sample_idx += 1
             probability = random.choices(n_streams, normalized_weights)
             current_stream = probability[0]
+            #print('current stream: ', current_stream)
             self.source_stream.append(current_stream)
             try:
                 x, y = next(instance_generator[current_stream])
@@ -116,9 +122,22 @@ class PredictionInfluenceStream(base.SyntheticDataset):
         self.weight_tracker.append(self.weight.copy())
         if self.idx % self.weight_update == 0:
             self.weight = self.temp_weight.copy()
+            #print('weight: ', self.weight)
         self.idx += 1
-        #print(self.weight_tracker)
+        if any(x > 0 and x < 0.2 for x in self.weight):
+            self.add_concept()
+        # print(self.temp_weight)
 
+    def add_concept(self):
+        #hard coding stuff :(
+        for stream in range(self.n_streams):
+            if self.weight[stream] < 0.2 and self.weight[stream] > 0 and (stream + 2) < self.n_streams:
+                if self.weight[stream + 2] == 0:
+                    self.temp_weight[stream + 2] = 1
+        if self.weight[0] < 0.01:
+            self.temp_weight[0] =0
+        if self.weight[1] < 0.01:
+            self.temp_weight[1] = 0                
 
     def __repr__(self):
         params = self._get_params()
