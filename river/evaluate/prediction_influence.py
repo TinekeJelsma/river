@@ -86,7 +86,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                     pos_xvalues.append(n_total_answers)
                     if drift_detector_positive.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
-                        print(f'Change detected at index {i} on feature {key}')
+                        print(f'Change detected in positive at index {i} on feature {key}')
                         drift_detector_positive.reset()
                     # only check first feature for now
                     break
@@ -97,7 +97,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                     neg_xvalues.append(n_total_answers)
                     if drift_detector_negative.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
-                        print(f'Change detected at index {i} on feature {key}')
+                        print(f'Change detected  in negative instances at index {i} on feature {key}')
                         drift_detector_negative.reset()
                     # only check first feature for now
                     break
@@ -215,6 +215,8 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(5, 3))
             axes[0].plot(pos_xvalues, pos_yvalues)
             axes[1].plot(neg_xvalues, neg_yvalues)
+            axes[0].title.set_text('Positive instances')
+            axes[1].title.set_text('Negative instances')
             plt.show()
             plt.close()
 
@@ -227,7 +229,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             # plt.title('negative instances (TN + FP)')
             if isinstance(dataset, PredictionInfluenceStream):
                 plt.plot(dataset.weight_tracker)
-                plt.legend(['base negative', 'base positive', 'drift negative', 'drift positive'], loc=0)
+                plt.legend(['base negative', 'base positive', 'drift negative', 'drift positive', 'drift negative 2', 'drift positive 2'], loc=0)
                 plt.show()
             
             
