@@ -43,9 +43,10 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
     cm_values = [TP, FP, FN, TN]
     cm_names = ['TP', 'FP', 'FN', 'TN']
     hist_info = {}
-    pos_yvalues, pos_xvalues, neg_yvalues, neg_xvalues = [],[],[],[]
+    pos_yvalues, pos_xvalues, neg_yvalues, neg_xvalues, xvalues, yvalues = [],[],[],[], [], []
     drift_detector_positive = drift.ADWIN()
     drift_detector_negative = drift.ADWIN()
+    drift_detector = drift.ADWIN() 
 
     n_total_answers = 0
     if show_time:
@@ -79,26 +80,36 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             if y_pred == 0 and y == 0:
                 # true negative
                 TN.append(x)
-            if y == 1: 
+            if y_pred == 1: 
                 for key, value in x.items():
                     drift_detector_positive.update(value)   # Data is processed one sample at a time
                     pos_yvalues.append(float(value))
                     pos_xvalues.append(n_total_answers)
                     if drift_detector_positive.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
-                        print(f'Change detected in positive at index {i} on feature {key}')
+                        print(f'Change detected in positivily classified at index {i} on feature {key}')
                         drift_detector_positive.reset()
                     # only check first feature for now
                     break
-            if y == 0:
+            if y_pred == 0:
                 for key, value in x.items():
                     drift_detector_negative.update(value)   # Data is processed one sample at a time
                     neg_yvalues.append(float(value))
                     neg_xvalues.append(n_total_answers)
                     if drift_detector_negative.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
-                        print(f'Change detected  in negative instances at index {i} on feature {key}')
+                        print(f'Change detected  in negativily classified instances at index {i} on feature {key}')
                         drift_detector_negative.reset()
+                    # only check first feature for now
+                    break
+            for key, value in x.items():
+                    drift_detector.update(value)   # Data is processed one sample at a time
+                    yvalues.append(float(value))
+                    xvalues.append(n_total_answers)
+                    if drift_detector_negative.change_detected:
+                        # The drift detector indicates after each sample if there is a drift in the data
+                        print(f'Change detected in all instances at index {i} on feature {key}')
+                        drift_detector.reset()
                     # only check first feature for now
                     break
 
@@ -212,11 +223,14 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                     # plt.show()
         if n_total_answers == max_samples:
             # plt.plot(pos_xvalues, pos_yvalues)
-            fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(5, 3))
+            fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(5, 3))
             axes[0].plot(pos_xvalues, pos_yvalues)
             axes[1].plot(neg_xvalues, neg_yvalues)
-            axes[0].title.set_text('Positive instances')
-            axes[1].title.set_text('Negative instances')
+            axes[2].plot(xvalues, yvalues)
+
+            axes[0].title.set_text('Positivily classified instances')
+            axes[1].title.set_text('Negativily classified instances')
+            axes[2].title.set_text('All instances')
             plt.show()
             plt.close()
 
