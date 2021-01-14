@@ -5,9 +5,11 @@ from river import metrics
 from scipy.stats import bernoulli
 
 def _compute_tpr(confusion_matrix):
+    print(f'confusion_matrix[1][1] = {confusion_matrix[1][1]}, confusion_matrix[1][0] = {confusion_matrix[1][0]}')
     return confusion_matrix[1][1] / (confusion_matrix[1][1] + confusion_matrix[1][0])
 
 def _compute_tnr(confusion_matrix):
+    print(f'confusion_matrix[0][0] = {confusion_matrix[0][0]} confusion_matrix[0][1] - {confusion_matrix[0][1]}')
     return confusion_matrix[0][0] / (confusion_matrix[0][0] + confusion_matrix[0][1])
 
 def _compute_ppv(confusion_matrix):
@@ -52,8 +54,9 @@ class LFR(DriftDetector):
         # if y_true = pos, ypred = neg, influence tnr and ppv
         # if y_true = neg, y_pred = pos, influence tpr and npv
         self.confusion_matrix.update(y_true, y_pred)
+        print(self.confusion_matrix)
         for metric in self.metrics.values():
-            n, p_hat, r_hat = metric.update_metric()
+            n, p_hat, r_hat = metric.update_metric(self.confusion_matrix, y_true, y_pred)
             lb_warn, ub_warn = self.generate_boundtable(n, p_hat, r_hat, alpha=self.warn_level)
             lb_detect, ub_detect = self.generate_boundtable(n, p_hat, r_hat, alpha=self.detect_level)
             warn_shift = (r_hat <= lb_warn) or (r_hat >= ub_warn)
@@ -65,7 +68,6 @@ class LFR(DriftDetector):
             print("Sample %i: metric %s, R: %.3f, Warn LB: %.3f Warn UB: %.f, Detect LB: %.3f, Detect UB: %.3f, warn: %s detect: %s"
                       % (self.idx, metric.metric_name, r_hat, lb_warn, ub_warn, lb_detect, ub_detect, warn_shift, detect_shift))
 
-            
             if any(self.warnings) and self.warn_time is None:
                 self.warn_time = self.idx
             elif all([not warning for warning in self.warnings]) and self.warn_time is not None:
@@ -79,10 +81,10 @@ class LFR(DriftDetector):
                 self.confusion_matrix.reset()
 
            
-        
-
     def generate_boundtable(self, n, p_hat, r_hat, n_sim=1000, alpha = 0.05):
-        bernoulli_samples = bernoulli.rvs(p_hat, size=n * n_sim).reshape(n_sim, n)
+        # print(f'phat = {type(p_hat)}, n = {type(n)}, n_sim = {type(n_sim)}')
+        n = int(n)
+        bernoulli_samples = bernoulli.rvs(p_hat, size=(n * n_sim)).reshape(n_sim, n)
         empirical_bounds = (1 - self.time_decay) * np.matmul(bernoulli_samples, self.time_decay ** (n - np.arange(1, n + 1)).reshape(n, 1)).sum(axis=1)
         ub = quantile(empirical_bounds, 1 - (alpha/2))
         lb = quantile(empirical_bounds, alpha/2)
@@ -105,7 +107,10 @@ class PerformanceMetric(object):
         self._P[-1] = 0.5
     
     def metric_influenced(self):
-        return abs(self.metric_value[-1] - self.metric_value[-2]) > 0
+        if len(self.metric_value) > 2:
+            return abs(self.metric_value[-1] - self.metric_value[-2]) > 0
+        else:
+            return 0
 
     def update_metric(self, confusion_matrix, y_true, y_pred):
         if self.metric_influenced():
