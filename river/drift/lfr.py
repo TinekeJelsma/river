@@ -5,11 +5,9 @@ from river import metrics
 from scipy.stats import bernoulli
 
 def _compute_tpr(confusion_matrix):
-    print(f'confusion_matrix[1][1] = {confusion_matrix[1][1]}, confusion_matrix[1][0] = {confusion_matrix[1][0]}')
     return confusion_matrix[1][1] / (confusion_matrix[1][1] + confusion_matrix[1][0])
 
 def _compute_tnr(confusion_matrix):
-    print(f'confusion_matrix[0][0] = {confusion_matrix[0][0]} confusion_matrix[0][1] - {confusion_matrix[0][1]}')
     return confusion_matrix[0][0] / (confusion_matrix[0][0] + confusion_matrix[0][1])
 
 def _compute_ppv(confusion_matrix):
@@ -31,8 +29,8 @@ class LFR(DriftDetector):
         super().__init__()
         # default values affected by init_bucket()
         self.time_decay = 0.01
-        self.warn_level = 0.5
-        self.detect_level = 0.6
+        self.warn_level = 0.01
+        self.detect_level = 0.0001
         self.metrics = {metric_name: PerformanceMetric(metric_name, self.time_decay)
                         for metric_name in ['tpr', 'tnr', 'ppv', 'npv']}
         
@@ -49,7 +47,7 @@ class LFR(DriftDetector):
         # tpr; tnr; ppv; npv
     
     def update(self, y_true, y_pred):
-        #if y true = pos, y pred =pos,  influence tpr and ppv
+        # if y true = pos, y pred =pos,  influence tpr and ppv
         # if y true = neg, ypred= neg, influence tnr, and npv
         # if y_true = pos, ypred = neg, influence tnr and ppv
         # if y_true = neg, y_pred = pos, influence tpr and npv
@@ -74,15 +72,18 @@ class LFR(DriftDetector):
                 self.warn_time = None
             
             if any(self.detections):
-                print(self.detections)
+                self.detections = []
                 self.concept_time_shifts.append(self.idx)
                 for metric in self.metrics.values():
                     metric.reset_internals()
                 self.confusion_matrix.reset()
-
+                self.confusion_matrix.update(1,1)
+                self.confusion_matrix.update(0,0)
+                self.confusion_matrix.update(1,0)
+                self.confusion_matrix.update(0,1)
+        self.idx += 1
            
     def generate_boundtable(self, n, p_hat, r_hat, n_sim=1000, alpha = 0.05):
-        # print(f'phat = {type(p_hat)}, n = {type(n)}, n_sim = {type(n_sim)}')
         n = int(n)
         bernoulli_samples = bernoulli.rvs(p_hat, size=(n * n_sim)).reshape(n_sim, n)
         empirical_bounds = (1 - self.time_decay) * np.matmul(bernoulli_samples, self.time_decay ** (n - np.arange(1, n + 1)).reshape(n, 1)).sum(axis=1)

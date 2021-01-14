@@ -18,7 +18,7 @@ gen = synth.ConceptDriftStream(stream=synth.SEA(seed=42, variant=0),
                                 drift_stream=synth.SEA(seed=42, variant=1),
                                 seed=1, position=500, width=50)
  # Take 1000 instances from the infinite data generator
-dataset = iter(gen.take(1000))
+dataset = iter(gen.take(100))
 metric = metrics.Accuracy()
 
 model = tree.HoeffdingAdaptiveTreeClassifier(
@@ -29,4 +29,5 @@ model = tree.HoeffdingAdaptiveTreeClassifier(
     seed=0
 )
 
-evaluate.evaluate_lfr(dataset, model, metric = metric, print_every=200, lfr = lfr_metric)
+evaluate.evaluate_lfr(dataset, model, metric = metric, print_every=50, lfr = lfr_metric)
+print(lfr_metric.concept_time_shifts)
