@@ -28,7 +28,7 @@ class LFR(DriftDetector):
     def __init__(self):
         super().__init__()
         # default values affected by init_bucket()
-        self.time_decay = 0.01
+        self.time_decay = 0.9
         self.warn_level = 0.01
         self.detect_level = 0.0001
         self.metrics = {metric_name: PerformanceMetric(metric_name, self.time_decay)
@@ -83,12 +83,24 @@ class LFR(DriftDetector):
                 self.confusion_matrix.update(0,1)
         self.idx += 1
            
-    def generate_boundtable(self, n, p_hat, r_hat, n_sim=1000, alpha = 0.05):
+    def generate_boundtable(self, n, p_hat, r_hat, n_sim=10, alpha = 0.05):
         n = int(n)
-        bernoulli_samples = bernoulli.rvs(p_hat, size=(n * n_sim)).reshape(n_sim, n)
-        empirical_bounds = (1 - self.time_decay) * np.matmul(bernoulli_samples, self.time_decay ** (n - np.arange(1, n + 1)).reshape(n, 1)).sum(axis=1)
-        ub = quantile(empirical_bounds, 1 - (alpha/2))
-        lb = quantile(empirical_bounds, alpha/2)
+        R = [None] * n_sim
+        emp_dist = 0
+        for j in range(n_sim):
+            bernoulli_samples = bernoulli.rvs(p_hat, size = n)
+            for i in range(n):
+                emp_dist +=(self.time_decay ** (n - i)) * bernoulli_samples[i]
+            R[j] = emp_dist* (1- self.time_decay)
+        # bernoulli_samples = bernoulli.rvs(p_hat, size=(n * n_sim)).reshape(n_sim, n)
+        # print(f'bernoulli samples: {bernoulli_samples}')
+        # for i in range(n):
+        #     emp_dist = self.time_decay ** (n - i) * 
+        # empirical_bounds = (1 - self.time_decay) * np.matmul(bernoulli_samples, self.time_decay ** (n - np.arange(1, n + 1)).reshape(n, 1)).sum(axis=1)
+        # print(f'emperical bounds = {empirical_bounds}')
+        print(f'R = {R}, bernoulli samples = {bernoulli_samples}')
+        ub = quantile(R, 1 - (alpha/2))
+        lb = quantile(R, alpha/2)
         return lb, ub
 
 class PerformanceMetric(object):

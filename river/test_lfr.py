@@ -18,7 +18,7 @@ gen = synth.ConceptDriftStream(stream=synth.SEA(seed=42, variant=0),
                                 drift_stream=synth.SEA(seed=42, variant=1),
                                 seed=1, position=500, width=50)
  # Take 1000 instances from the infinite data generator
-dataset = iter(gen.take(100))
+dataset = iter(gen.take(5))
 metric = metrics.Accuracy()
 
 model = tree.HoeffdingAdaptiveTreeClassifier(
