@@ -55,8 +55,8 @@ class LFR(DriftDetector):
         print(self.confusion_matrix)
         for metric in self.metrics.values():
             n, p_hat, r_hat = metric.update_metric(self.confusion_matrix, y_true, y_pred)
-            lb_warn, ub_warn = self.generate_boundtable(n, p_hat, r_hat, alpha=self.warn_level)
-            lb_detect, ub_detect = self.generate_boundtable(n, p_hat, r_hat, alpha=self.detect_level)
+            lb_warn, ub_warn = self.generate_boundtable(n, p_hat, alpha=self.warn_level)
+            lb_detect, ub_detect = self.generate_boundtable(n, p_hat, alpha=self.detect_level)
             warn_shift = (r_hat <= lb_warn) or (r_hat >= ub_warn)
             detect_shift = (r_hat <= lb_detect) or (r_hat >= ub_detect)
 
@@ -83,22 +83,21 @@ class LFR(DriftDetector):
                 self.confusion_matrix.update(0,1)
         self.idx += 1
            
-    def generate_boundtable(self, n, p_hat, r_hat, n_sim=10, alpha = 0.05):
+    def generate_boundtable(self, n, p_hat, n_sim=10, alpha = 0.05):
         n = int(n)
         R = [None] * n_sim
         emp_dist = 0
         for j in range(n_sim):
+            emp_dist = 0
             bernoulli_samples = bernoulli.rvs(p_hat, size = n)
             for i in range(n):
                 emp_dist +=(self.time_decay ** (n - i)) * bernoulli_samples[i]
+                print(f"emp dist {i}= {(self.time_decay ** (n - i)) * bernoulli_samples[i]}")
             R[j] = emp_dist* (1- self.time_decay)
-        # bernoulli_samples = bernoulli.rvs(p_hat, size=(n * n_sim)).reshape(n_sim, n)
-        # print(f'bernoulli samples: {bernoulli_samples}')
-        # for i in range(n):
-        #     emp_dist = self.time_decay ** (n - i) * 
-        # empirical_bounds = (1 - self.time_decay) * np.matmul(bernoulli_samples, self.time_decay ** (n - np.arange(1, n + 1)).reshape(n, 1)).sum(axis=1)
-        # print(f'emperical bounds = {empirical_bounds}')
+            print(f'R[j]= {R[j]}')
+       # print(f'emperical bounds = {empirical_bounds}')
         print(f'R = {R}, bernoulli samples = {bernoulli_samples}')
+        # print(f'R = {R}')
         ub = quantile(R, 1 - (alpha/2))
         lb = quantile(R, alpha/2)
         return lb, ub
