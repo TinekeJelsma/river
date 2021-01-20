@@ -28,7 +28,7 @@ class LFR(DriftDetector):
     def __init__(self):
         super().__init__()
         # default values affected by init_bucket()
-        self.time_decay = 0.9
+        self.time_decay = 0.95
         self.warn_level = 0.01
         self.detect_level = 0.0001
         self.metrics = {metric_name: PerformanceMetric(metric_name, self.time_decay)
@@ -71,7 +71,7 @@ class LFR(DriftDetector):
             elif all([not warning for warning in self.warnings]) and self.warn_time is not None:
                 self.warn_time = None
             
-            if any(self.detections):
+            if any(self.detections) and self.idx>20:
                 self.detections = []
                 self.concept_time_shifts.append(self.idx)
                 for metric in self.metrics.values():
@@ -83,23 +83,17 @@ class LFR(DriftDetector):
                 self.confusion_matrix.update(0,1)
         self.idx += 1
            
-    def generate_boundtable(self, n, p_hat, n_sim=10, alpha = 0.05):
+    def generate_boundtable(self, n, p_hat, n_sim=1000, alpha = 0.01):
         n = int(n)
         R = [None] * n_sim
-        emp_dist = 0
+        summation = 0
         for j in range(n_sim):
-            emp_dist = 0
+            summation = 0
             bernoulli_samples = bernoulli.rvs(p_hat, size = n)
             for i in range(n):
-                emp_dist +=(self.time_decay ** (n - i)) * bernoulli_samples[i]
-                print(f"emp dist {i}= {(self.time_decay ** (n - i)) * bernoulli_samples[i]}")
-            R[j] = emp_dist* (1- self.time_decay)
-            print(f'R[j]= {R[j]}')
-       # print(f'emperical bounds = {empirical_bounds}')
-        print(f'R = {R}, bernoulli samples = {bernoulli_samples}')
-        # print(f'R = {R}')
-        ub = quantile(R, 1 - (alpha/2))
-        lb = quantile(R, alpha/2)
+                summation +=(self.time_decay ** (n - i)) * bernoulli_samples[i]
+            R[j] = summation* (1- self.time_decay)
+        lb, ub = np.percentile(R, q=[alpha, (1 - alpha)])
         return lb, ub
 
 class PerformanceMetric(object):
@@ -134,13 +128,13 @@ class PerformanceMetric(object):
             n = confusion_matrix[1][1] + confusion_matrix[1][0]
             self._P.append(confusion_matrix[1][1]/ n)
         if self.metric_name == 'tnr':
-            n = confusion_matrix[0][1] + confusion_matrix[0][0]
+            n = confusion_matrix[0][0] + confusion_matrix[0][1]
             self._P.append(confusion_matrix[0][0]/ n)
         if self.metric_name == 'ppv':
             n = confusion_matrix[0][1] + confusion_matrix[1][1]
             self._P.append(confusion_matrix[1][1]/ n)
         if self.metric_name == 'npv':
-            n = confusion_matrix[1][0] + confusion_matrix[0][0]
+            n = confusion_matrix[0][0] + confusion_matrix[1][0]
             self._P.append(confusion_matrix[0][0]/ n)
 
         return n, self._P[-1], self._R[-1]
