@@ -27,7 +27,7 @@ METRICS_FUNCTION_MAPPING = {
 
 class LFR(DriftDetector):
 
-    def __init__(self):
+    def __init__(self, bounds_table = None):
         super().__init__()
         # default values affected by init_bucket()
         self.time_decay = 0.9
@@ -45,29 +45,30 @@ class LFR(DriftDetector):
         self.warnings = []
         self.detections = []
         self.warn_time = 0
+        self.bounds_table = bounds_table
         self.concept_time_shifts = []
         # tpr; tnr; ppv; npv
     
     def update(self, y_true, y_pred):
         self.confusion_matrix.update(y_true, y_pred)
-        print(self.confusion_matrix)
+        # print(self.confusion_matrix)
         for metric in self.metrics.values():
             n, p_hat, r_hat = metric.update_metric(self.confusion_matrix, y_true, y_pred)
-            lb_warn, ub_warn, lb_detect, ub_detect = self.generate_bounds(n, p_hat,alpha_detect = self.detect_level, alpha_warn = self.warn_level)
-            # lb_detect, ub_detect = self.generate_bounds(n, p_hat, alpha=self.detect_level)
-            warn_shift = (r_hat <= lb_warn) or (r_hat >= ub_warn)
-            detect_shift = (r_hat <= lb_detect) or (r_hat >= ub_detect)
+            # lb_warn, ub_warn, lb_detect, ub_detect = self.generate_bounds(n, p_hat,alpha_detect = self.detect_level, alpha_warn = self.warn_level)
+            # # lb_detect, ub_detect = self.generate_bounds(n, p_hat, alpha=self.detect_level)
+            # warn_shift = (r_hat <= lb_warn) or (r_hat >= ub_warn)
+            # detect_shift = (r_hat <= lb_detect) or (r_hat >= ub_detect)
 
-            self.warnings.append(warn_shift)
-            self.detections.append(detect_shift)
+            # self.warnings.append(warn_shift)
+            # self.detections.append(detect_shift)
 
-            print("Sample %i: metric %s, R: %.3f, Warn LB: %.3f Warn UB: %.3f, Detect LB: %.3f, Detect UB: %.3f, warn: %s detect: %s"
-                      % (self.idx, metric.metric_name, r_hat, lb_warn, ub_warn, lb_detect, ub_detect, warn_shift, detect_shift))
+            # print("Sample %i: metric %s, R: %.3f, Warn LB: %.3f Warn UB: %.3f, Detect LB: %.3f, Detect UB: %.3f, warn: %s detect: %s"
+            #           % (self.idx, metric.metric_name, r_hat, lb_warn, ub_warn, lb_detect, ub_detect, warn_shift, detect_shift))
 
-            if any(self.warnings) and self.warn_time is None:
-                self.warn_time = self.idx
-            elif all([not warning for warning in self.warnings]) and self.warn_time is not None:
-                self.warn_time = None
+            # if any(self.warnings) and self.warn_time is None:
+            #     self.warn_time = self.idx
+            # elif all([not warning for warning in self.warnings]) and self.warn_time is not None:
+            #     self.warn_time = None
             
             # if any(self.detections) and self.idx >50:
             #     self.detections = []

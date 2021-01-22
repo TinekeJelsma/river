@@ -7,6 +7,7 @@ from river import metrics
 from river import utils
 from river import stream
 from river.datasets.synth.prediction_influenced_stream import PredictionInfluenceStream
+from river.drift import LFR
 from scipy.stats import ranksums
 import matplotlib.pyplot as plt
 from river import drift
@@ -16,6 +17,7 @@ __all__ = ['evaluate_influential']
 
 
 def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Metric,
+                        drift_detection: drift.LFR = None,
                           moment: typing.Union[str, typing.Callable] = None,
                           delay: typing.Union[str, int, dt.timedelta, typing.Callable] = None,
                           print_every=0, max_samples: int = 100, comparison_block: int = 100, 
@@ -43,7 +45,9 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
     cm_values = [TP, FP, FN, TN]
     cm_names = ['TP', 'FP', 'FN', 'TN']
     hist_info = {}
-    pos_yvalues, pos_xvalues, neg_yvalues, neg_xvalues = [],[],[],[]
+    pos_yvalues = [[]] * 3
+    pos_xvalues = [[]] * 3
+    neg_yvalues, neg_xvalues = [],[]
     drift_detector_positive = drift.ADWIN()
     drift_detector_negative = drift.ADWIN()
 
@@ -62,6 +66,8 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
         y_pred = preds.pop(i)
         if y_pred != {} and y_pred is not None:
             metric.update(y_true=y, y_pred=y_pred)
+            if drift_detection is not None:
+                drift_detection.update(y_true = y, y_pred = y_pred)
             cm.update(y, y_pred)
             if isinstance(dataset, PredictionInfluenceStream):
                 dataset.receive_feedback(y_true=y, y_pred=y_pred, x_features=x)
@@ -82,8 +88,8 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             if y == 1: 
                 for key, value in x.items():
                     drift_detector_positive.update(value)   # Data is processed one sample at a time
-                    pos_yvalues.append(float(value))
-                    pos_xvalues.append(n_total_answers)
+                    pos_yvalues[key].append(float(value))
+                    pos_xvalues[key].append(n_total_answers)
                     if drift_detector_positive.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
                         print(f'Change detected in positive at index {i} on feature {key}')
@@ -220,19 +226,10 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             plt.show()
             plt.close()
 
-            # plt.ylabel('feature values over time')
-            # plt.xlabel('time')
-            # plt.title('positive instances (TP + FN)')
-            # plt.plot(neg_xvalues, neg_yvalues)
-            # plt.ylabel('feature values over time')
-            # plt.xlabel('time')
-            # plt.title('negative instances (TN + FP)')
             if isinstance(dataset, PredictionInfluenceStream):
                 plt.plot(dataset.weight_tracker)
                 plt.legend(['base negative', 'base positive', 'drift negative', 'drift positive', 'drift negative 2', 'drift positive 2'], loc=0)
                 plt.show()
-            
-            
 
         if n_total_answers >= max_samples:
             print(cm)

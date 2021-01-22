@@ -1,6 +1,9 @@
 import datetime as dt
+from river.datasets.synth.prediction_influenced_stream import PredictionInfluenceStream
 import time
 import typing
+
+from matplotlib import pyplot as plt
 
 from river import base
 from river import metrics
@@ -21,6 +24,7 @@ def evaluate_lfr(
     print_every=0,
     show_time=False,
     show_memory=False,
+    max_samples: int = 100,
     **print_kwargs,
 ) -> metrics.Metric:
     
@@ -64,5 +68,13 @@ def evaluate_lfr(
             if show_memory:
                 msg += f" – {model._memory_usage}"
             print(msg, **print_kwargs)
+        
+        if n_total_answers >= max_samples:
+            if isinstance(dataset, PredictionInfluenceStream):
+                plt.plot(dataset.weight_tracker)
+                print(dataset.weight_tracker)
+                plt.legend(['base negative', 'base positive', 'drift negative', 'drift positive', 'drift negative 2', 'drift positive 2'], loc=0)
+                plt.show()
+            return metric
 
     return metric
