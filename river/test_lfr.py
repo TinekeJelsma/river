@@ -13,7 +13,7 @@ from river import neighbors
 import itertools
 
 streams = []
-max_samples = 10
+max_samples = 40
 lfr_metric = LFR(max_samples = max_samples)
 
 for x in range(1):

@@ -104,29 +104,44 @@ class BoundTable(object):
         self.warn_level = warn_level
         self.detect_level = detect_level
         self.max_samples = max_samples
-        self.filename  = hash(f'{self.warn_level},{self.detect_level}')
+        self.p_range = np.arange(0, 1, 0.1)
+        self.n_range = range(1, self.max_samples, 1)
+        self.filename  = str(f'{self.warn_level}-{self.detect_level}')
+        print(f'warn level: {self.warn_level}, detect level; {self.detect_level} file name = {self.filename}')
     
+    def get_path(self):
+        return os.path.join(os.getcwd(), f'{self.filename}.pkl')
+
     def table_exists(self):
-        os.chdir('C:/Users/tineke.jelsma/source/repos/river/river/drift/lfr_bounds')
-        if os.path.isfile(f'{self.filename}.pkl'):
-            return 1
-        else:
-            return 0
+        return os.path.isfile(self.get_path())
     
     def create_table(self):
-        n_range = range(1, self.max_samples, 1)
-        p_range = np.arange(0, 1, 0.1)
         bound_dict = {}
-        for n in n_range:
+        for n in self.n_range:
             bound_dict[n] = {}
-            for p_hat in p_range:
+            for p_hat in self.p_range:
                 p_hat = round(p_hat, 3)
                 bound_dict[n][p_hat] = {}
                 lb_warn, ub_warn, lb_detect, ub_detect = self.generate_bounds(n, p_hat)
                 bound_dict[n][p_hat] = {'lb_warn': lb_warn, 'ub_warn': ub_warn, 'lb_detect': lb_detect, 'ub_detect': ub_detect}
+        self.save_table(bound_dict)
+
+        return bound_dict
+
+    def save_table(self, bound_dict):
         with open(f'{self.filename}.pkl', 'wb') as pickleFile:
             pickle.dump(bound_dict, pickleFile)
             pickleFile.close()
+
+    def update_table(self, bound_dict, n, p_hat):
+        print('update table')
+        bound_dict[n] = {}
+        for p_hat in self.p_range:
+            p_hat = round(p_hat, 3)
+            bound_dict[n][p_hat] = {}
+            lb_warn, ub_warn, lb_detect, ub_detect = self.generate_bounds(n, p_hat)
+            bound_dict[n][p_hat] = {'lb_warn': lb_warn, 'ub_warn': ub_warn, 'lb_detect': lb_detect, 'ub_detect': ub_detect}
+        self.save_table(bound_dict)
 
         return bound_dict
 
@@ -153,10 +168,13 @@ class BoundTable(object):
             bound_dict = self.create_table()
         # print(f'bound table: {bound_dict}')
         print(f'N = {n} p_hat = {p_hat}')
+        if n not in bound_dict:
+            bound_dict = self.update_table(bound_dict, n, p_hat)
         ub_detect = bound_dict[n][p_hat].get('ub_detect')
         lb_detect = bound_dict[n][p_hat].get('lb_detect')
         ub_warn = bound_dict[n][p_hat].get('ub_warn')
         lb_warn = bound_dict[n][p_hat].get('lb_warn')
+
         return lb_warn, ub_warn, lb_detect, ub_detect
         
 
