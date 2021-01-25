@@ -49,4 +49,4 @@ model = preprocessing.StandardScaler()
 model |= linear_model.ALMAClassifier()
 metric = metrics.Accuracy()
 
-evaluate.evaluate_influential(X_y, model, metric, print_every=10000, comparison_block = 1000, intervals = 8, max_samples=50000, prior = 1)
+evaluate.evaluate_influential(X_y, model, metric, print_every=1000, comparison_block = 1000, intervals = 8, max_samples=50000, prior = 1)

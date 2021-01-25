@@ -46,8 +46,8 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
     cm_names = ['TP', 'FP', 'FN', 'TN']
     hist_info = {}
     pos_yvalues = [[]] * 3
-    pos_xvalues = [[]] * 3
-    neg_yvalues, neg_xvalues = [],[]
+    neg_yvalues = [[]] * 3
+    pos_xvalues, neg_xvalues = [],[]
     drift_detector_positive = drift.ADWIN()
     drift_detector_negative = drift.ADWIN()
 
@@ -89,7 +89,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                 for key, value in x.items():
                     drift_detector_positive.update(value)   # Data is processed one sample at a time
                     pos_yvalues[key].append(float(value))
-                    pos_xvalues[key].append(n_total_answers)
+                    pos_xvalues.append(n_total_answers)
                     if drift_detector_positive.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
                         print(f'Change detected in positive at index {i} on feature {key}')
@@ -99,7 +99,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             if y == 0:
                 for key, value in x.items():
                     drift_detector_negative.update(value)   # Data is processed one sample at a time
-                    neg_yvalues.append(float(value))
+                    neg_yvalues[key].append(float(value))
                     neg_xvalues.append(n_total_answers)
                     if drift_detector_negative.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
@@ -217,13 +217,14 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                     # plt.bar(edges_second_chunk[:-1], count_second_chunk, width = 0.2, color='b')
                     # plt.show()
         if n_total_answers == max_samples:
-            # plt.plot(pos_xvalues, pos_yvalues)
-            fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(5, 3))
-            axes[0].plot(pos_xvalues, pos_yvalues)
-            axes[1].plot(neg_xvalues, neg_yvalues)
-            axes[0].title.set_text('Positive instances')
-            axes[1].title.set_text('Negative instances')
-            plt.show()
+            for i in range(len(x)):
+                fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(5, 3))
+                axes[0].plot(pos_xvalues, pos_yvalues[i], label = f'values feature {i}')
+                axes[1].plot(neg_xvalues, neg_yvalues[i], label = f'values feature {i}')
+                axes[0].title.set_text('Positive instances')
+                axes[1].title.set_text('Negative instances')
+                plt.legend()
+                plt.show()
             plt.close()
 
             if isinstance(dataset, PredictionInfluenceStream):

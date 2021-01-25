@@ -4,7 +4,8 @@ from numpy.lib.function_base import quantile
 from river.base import DriftDetector
 from river import metrics
 from scipy.stats import bernoulli
-
+import os
+import pickle
 
 def _compute_tpr(confusion_matrix):
     return confusion_matrix[1][1] / (confusion_matrix[1][1] + confusion_matrix[1][0])
@@ -27,12 +28,13 @@ METRICS_FUNCTION_MAPPING = {
 
 class LFR(DriftDetector):
 
-    def __init__(self, bounds_table = None):
+    def __init__(self, time_decay = 0.9, warn_level = 0.01, detect_level = 0.00001, max_samples: int = None):
         super().__init__()
         # default values affected by init_bucket()
-        self.time_decay = 0.9
-        self.warn_level = 0.01
-        self.detect_level = 0.00001
+        self.time_decay = time_decay
+        self.warn_level = warn_level
+        self.detect_level = detect_level
+        self.max_samples = max_samples
         self.metrics = {metric_name: PerformanceMetric(metric_name, self.time_decay)
                         for metric_name in ['tpr', 'tnr', 'ppv', 'npv']}
         
@@ -45,32 +47,31 @@ class LFR(DriftDetector):
         self.warnings = []
         self.detections = []
         self.warn_time = 0
-        self.bounds_table = bounds_table
+        self.bounds_table = BoundTable(self.time_decay, self.warn_level, self.detect_level, self.max_samples)
         self.concept_time_shifts = []
-        # tpr; tnr; ppv; npv
     
     def update(self, y_true, y_pred):
         self.confusion_matrix.update(y_true, y_pred)
         # print(self.confusion_matrix)
         for metric in self.metrics.values():
             n, p_hat, r_hat = metric.update_metric(self.confusion_matrix, y_true, y_pred)
-            # lb_warn, ub_warn, lb_detect, ub_detect = self.generate_bounds(n, p_hat,alpha_detect = self.detect_level, alpha_warn = self.warn_level)
-            # # lb_detect, ub_detect = self.generate_bounds(n, p_hat, alpha=self.detect_level)
-            # warn_shift = (r_hat <= lb_warn) or (r_hat >= ub_warn)
-            # detect_shift = (r_hat <= lb_detect) or (r_hat >= ub_detect)
+            lb_warn, ub_warn, lb_detect, ub_detect = self.bounds_table.get_bounds(n, p_hat)
+            # lb_detect, ub_detect = self.generate_bounds(n, p_hat, alpha=self.detect_level)
+            warn_shift = (r_hat <= lb_warn) or (r_hat >= ub_warn)
+            detect_shift = (r_hat <= lb_detect) or (r_hat >= ub_detect)
 
-            # self.warnings.append(warn_shift)
-            # self.detections.append(detect_shift)
+            self.warnings.append(warn_shift)
+            self.detections.append(detect_shift)
 
-            # print("Sample %i: metric %s, R: %.3f, Warn LB: %.3f Warn UB: %.3f, Detect LB: %.3f, Detect UB: %.3f, warn: %s detect: %s"
-            #           % (self.idx, metric.metric_name, r_hat, lb_warn, ub_warn, lb_detect, ub_detect, warn_shift, detect_shift))
+            print("Sample %i: metric %s, R: %.3f, Warn LB: %.3f Warn UB: %.3f, Detect LB: %.3f, Detect UB: %.3f, warn: %s detect: %s"
+                      % (self.idx, metric.metric_name, r_hat, lb_warn, ub_warn, lb_detect, ub_detect, warn_shift, detect_shift))
 
-            # if any(self.warnings) and self.warn_time is None:
-            #     self.warn_time = self.idx
-            # elif all([not warning for warning in self.warnings]) and self.warn_time is not None:
-            #     self.warn_time = None
+            if any(self.warnings) and self.warn_time is None:
+                self.warn_time = self.idx
+            elif all([not warning for warning in self.warnings]) and self.warn_time is not None:
+                self.warn_time = None
             
-            # if any(self.detections) and self.idx >50:
+            # if any(self.detections) and self.idx>50:
             #     self.detections = []
             #     self.concept_time_shifts.append(self.idx)
             #     for metric in self.metrics.values():
@@ -81,20 +82,6 @@ class LFR(DriftDetector):
             #     self.confusion_matrix.update(1,0)
             #     self.confusion_matrix.update(0,1)
         self.idx += 1
-           
-    def generate_bounds(self, n, p_hat, n_sim=1000, alpha_detect = 0.00001, alpha_warn = 0.01):
-        n = int(n)
-        R = [None] * n_sim
-        for j in range(n_sim):
-            summation = 0
-            bernoulli_samples = bernoulli.rvs(p_hat, size = n)
-            for i in range(n):
-                summation +=(pow(self.time_decay,(n - i -1))) * bernoulli_samples[i]
-            R[j] = summation* (1- self.time_decay)
-        lb_detect, ub_detect = np.percentile(R, q=[alpha_detect, (1 - alpha_detect)])
-        lb_warn, ub_warn = np.percentile(R, q=[alpha_warn, (1 - alpha_warn)])
-
-        return lb_warn, ub_warn, lb_detect, ub_detect
     
     def show_metric(self):
         fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(5, 3))
@@ -110,7 +97,68 @@ class LFR(DriftDetector):
             axes[1].legend()
         plt.show()
 
+class BoundTable(object):
+    def __init__(self, time_decay, warn_level, detect_level, max_samples) -> None:
+        super().__init__() 
+        self.time_decay = time_decay
+        self.warn_level = warn_level
+        self.detect_level = detect_level
+        self.max_samples = max_samples
+        self.filename  = hash(f'{self.warn_level},{self.detect_level}')
+    
+    def table_exists(self):
+        os.chdir('C:/Users/tineke.jelsma/source/repos/river/river/drift/lfr_bounds')
+        if os.path.isfile(f'{self.filename}.pkl'):
+            return 1
+        else:
+            return 0
+    
+    def create_table(self):
+        n_range = range(1, self.max_samples, 1)
+        p_range = np.arange(0, 1, 0.1)
+        bound_dict = {}
+        for n in n_range:
+            bound_dict[n] = {}
+            for p_hat in p_range:
+                p_hat = round(p_hat, 3)
+                bound_dict[n][p_hat] = {}
+                lb_warn, ub_warn, lb_detect, ub_detect = self.generate_bounds(n, p_hat)
+                bound_dict[n][p_hat] = {'lb_warn': lb_warn, 'ub_warn': ub_warn, 'lb_detect': lb_detect, 'ub_detect': ub_detect}
+        with open(f'{self.filename}.pkl', 'wb') as pickleFile:
+            pickle.dump(bound_dict, pickleFile)
+            pickleFile.close()
 
+        return bound_dict
+
+    def generate_bounds(self, n, p_hat, n_sim=1000):
+        n = int(n)
+        R = [None] * n_sim
+        for j in range(n_sim):
+            summation = 0
+            bernoulli_samples = bernoulli.rvs(p_hat, size = n)
+            for i in range(n):
+                summation +=(pow(self.time_decay,(n - i -1))) * bernoulli_samples[i]
+            R[j] = summation* (1- self.time_decay)
+        lb_detect, ub_detect = np.quantile(R, q=[self.detect_level, (1 - self.detect_level)])
+        lb_warn, ub_warn = np.quantile(R, q=[self.warn_level, (1 - self.warn_level)])
+
+        return lb_warn, ub_warn, lb_detect, ub_detect
+    
+    def get_bounds(self, n, p_hat):
+        n = int(n)
+        p_hat = round(p_hat, 1)
+        if self.table_exists():
+            bound_dict = pickle.load(open(f'{self.filename}.pkl', 'rb'))
+        else:
+            bound_dict = self.create_table()
+        # print(f'bound table: {bound_dict}')
+        print(f'N = {n} p_hat = {p_hat}')
+        ub_detect = bound_dict[n][p_hat].get('ub_detect')
+        lb_detect = bound_dict[n][p_hat].get('lb_detect')
+        ub_warn = bound_dict[n][p_hat].get('ub_warn')
+        lb_warn = bound_dict[n][p_hat].get('lb_warn')
+        return lb_warn, ub_warn, lb_detect, ub_detect
+        
 
 class PerformanceMetric(object):
 
