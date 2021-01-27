@@ -49,6 +49,15 @@ class LFR(DriftDetector):
         self.warn_time = 0
         self.bounds_table = BoundTable(self.time_decay, self.warn_level, self.detect_level, self.max_samples)
         self.concept_time_shifts = []
+        self.after_detection = 0
+        self.first_detection = False
+    
+    def reset_confusion_matrix(self):
+        self.confusion_matrix.reset()
+        self.confusion_matrix.update(1,1)
+        self.confusion_matrix.update(0,0)
+        self.confusion_matrix.update(1,0)
+        self.confusion_matrix.update(0,1)
     
     def update(self, y_true, y_pred):
         self.confusion_matrix.update(y_true, y_pred)
@@ -71,16 +80,19 @@ class LFR(DriftDetector):
             elif all([not warning for warning in self.warnings]) and self.warn_time is not None:
                 self.warn_time = None
             
-            # if any(self.detections) and self.idx>50:
-            #     self.detections = []
-            #     self.concept_time_shifts.append(self.idx)
-            #     for metric in self.metrics.values():
-            #         metric.reset_internals()
-            #     self.confusion_matrix.reset()
-            #     self.confusion_matrix.update(1,1)
-            #     self.confusion_matrix.update(0,0)
-            #     self.confusion_matrix.update(1,0)
-            #     self.confusion_matrix.update(0,1)
+            if any(self.detections) and self.idx>50:
+                self.detections = []
+                if self.concept_time_shifts:
+                    if self.concept_time_shifts[-1] + 50 < self.idx:
+                        self.concept_time_shifts.append(self.idx)
+                        for metric in self.metrics.values():
+                            metric.reset_internals()
+                            self.reset_confusion_matrix()
+                if not self.concept_time_shifts:
+                    self.concept_time_shifts.append(self.idx)
+                    for metric in self.metrics.values():
+                        metric.reset_internals()
+                        self.reset_confusion_matrix()
         self.idx += 1
     
     def show_metric(self):
@@ -104,10 +116,10 @@ class BoundTable(object):
         self.warn_level = warn_level
         self.detect_level = detect_level
         self.max_samples = max_samples
-        self.p_range = np.arange(0, 1, 0.1)
-        self.n_range = range(1, self.max_samples, 1)
-        self.filename  = str(f'{self.warn_level}-{self.detect_level}')
-        print(f'warn level: {self.warn_level}, detect level; {self.detect_level} file name = {self.filename}')
+        steps = 0.01
+        self.p_range = np.arange(0, 1 + steps, steps)
+        self.n_range = range(1, int(self.max_samples/4), 1)
+        self.filename  = str(f'warn{self.warn_level}-detect{self.detect_level}-psteps{steps}')
     
     def get_path(self):
         return os.path.join(os.getcwd(), f'{self.filename}.pkl')
@@ -134,7 +146,6 @@ class BoundTable(object):
             pickleFile.close()
 
     def update_table(self, bound_dict, n, p_hat):
-        print('update table')
         bound_dict[n] = {}
         for p_hat in self.p_range:
             p_hat = round(p_hat, 3)
@@ -167,7 +178,7 @@ class BoundTable(object):
         else:
             bound_dict = self.create_table()
         # print(f'bound table: {bound_dict}')
-        print(f'N = {n} p_hat = {p_hat}')
+        # print(f'N = {n} p_hat = {p_hat}')
         if n not in bound_dict:
             bound_dict = self.update_table(bound_dict, n, p_hat)
         ub_detect = bound_dict[n][p_hat].get('ub_detect')

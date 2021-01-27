@@ -45,8 +45,8 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
     cm_values = [TP, FP, FN, TN]
     cm_names = ['TP', 'FP', 'FN', 'TN']
     hist_info = {}
-    pos_yvalues = [[]] * 3
-    neg_yvalues = [[]] * 3
+    pos_yvalues = [[]] * 19
+    neg_yvalues = [[]] * 19
     pos_xvalues, neg_xvalues = [],[]
     drift_detector_positive = drift.ADWIN()
     drift_detector_negative = drift.ADWIN()
@@ -59,6 +59,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
 
         # Question
         if y is None:
+            print(f'x = {x}')
             preds[i] = pred_func(x=x)
             continue
 
@@ -86,26 +87,30 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                 # true negative
                 TN.append(x)
             if y == 1: 
+                key_number = 0
                 for key, value in x.items():
                     drift_detector_positive.update(value)   # Data is processed one sample at a time
-                    pos_yvalues[key].append(float(value))
+                    pos_yvalues[key_number].append(float(value))
                     pos_xvalues.append(n_total_answers)
                     if drift_detector_positive.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
                         print(f'Change detected in positive at index {i} on feature {key}')
                         drift_detector_positive.reset()
                     # only check first feature for now
+                    key_number += 1
                     break
             if y == 0:
+                key_number = 0
                 for key, value in x.items():
                     drift_detector_negative.update(value)   # Data is processed one sample at a time
-                    neg_yvalues[key].append(float(value))
+                    neg_yvalues[key_number].append(float(value))
                     neg_xvalues.append(n_total_answers)
                     if drift_detector_negative.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
                         print(f'Change detected  in negative instances at index {i} on feature {key}')
                         drift_detector_negative.reset()
                     # only check first feature for now
+                    key_number += 1
                     break
 
         model.learn_one(x=x, y=y)
