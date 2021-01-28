@@ -59,7 +59,6 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
 
         # Question
         if y is None:
-            print(f'x = {x}')
             preds[i] = pred_func(x=x)
             continue
 
@@ -194,14 +193,14 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             comparison = vars()['comparison' + str(first_chunk)]
 
             # compare density of TP and FN, and TN and FP
-            for feature in range(len(x)):
-                print('feature: ', feature)
-                if 'TP-' + str(feature) in comparison and 'FN-' + str(feature) in comparison:
-                    test = ranksums(comparison['TP-' + str(feature)].get('subset'), comparison['FN-' + str(feature)].get('subset'))
-                    print('p value TP FN ', test.pvalue)
-                if 'TN-' + str(feature) in comparison and 'FP-' + str(feature) in comparison:
-                    test = ranksums(comparison['TN-' + str(feature)].get('subset'), comparison['FP-' + str(feature)].get('subset'))
-                    print('p value TN FP ', test.pvalue)
+            # for feature in range(len(x)):
+            #     print('feature: ', feature)
+            #     if 'TP-' + str(feature) in comparison and 'FN-' + str(feature) in comparison:
+            #         test = ranksums(comparison['TP-' + str(feature)].get('subset'), comparison['FN-' + str(feature)].get('subset'))
+            #         print('p value TP FN ', test.pvalue)
+            #     if 'TN-' + str(feature) in comparison and 'FP-' + str(feature) in comparison:
+            #         test = ranksums(comparison['TN-' + str(feature)].get('subset'), comparison['FP-' + str(feature)].get('subset'))
+            #         print('p value TN FP ', test.pvalue)
         
             # visualize the distribution of data in hists:
             for classification in names:
@@ -222,7 +221,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                     # plt.bar(edges_second_chunk[:-1], count_second_chunk, width = 0.2, color='b')
                     # plt.show()
         if n_total_answers == max_samples:
-            for i in range(len(x)):
+            for i in range(1):
                 fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(5, 3))
                 axes[0].plot(pos_xvalues, pos_yvalues[i], label = f'values feature {i}')
                 axes[1].plot(neg_xvalues, neg_yvalues[i], label = f'values feature {i}')

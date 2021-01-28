@@ -34,12 +34,12 @@ for x in range(1):
 # X_y = {}
 
 # X_y = itertools.chain(set1.take(1000), set2.take(1000))
-X_y = synth.PredictionInfluenceStream(stream= streams, weight_incorrect=1.01, weight_correct=0.99, weight_update = 1, weight = [1,1,0,0,0,0])
+# X_y = synth.PredictionInfluenceStream(stream= streams, weight_incorrect=1.01, weight_correct=0.99, weight_update = 1, weight = [1,1,0,0,0,0])
 # X_y = synth.PredictionInfluenceStream(stream= streams, weight_incorrect=0.99, weight_correct=1.01, weight_update = 1)
 
 
 # X_y = synth.RandomRBFDrift(seed_model=30, seed_sample=30, n_classes=2, n_features=4, change_speed=0, n_drift_centroids=10, n_centroids=20, class_weights=[0.5,0,5])
-# X_y = datasets.CreditCard()
+X_y = datasets.LendingClub()
 # for x, y in X_y.take(5):
 #     print(x, y)
 # model = preprocessing.StandardScaler()
@@ -49,4 +49,4 @@ model = preprocessing.StandardScaler()
 model |= linear_model.ALMAClassifier()
 metric = metrics.Accuracy()
 
-evaluate.evaluate_influential(X_y, model, metric, print_every=1000, comparison_block = 1000, intervals = 8, max_samples=50000, prior = 1)
+evaluate.evaluate_influential(X_y, model, metric, print_every=100000, comparison_block = 1000, intervals = 8, max_samples=15384462, prior = 1)
