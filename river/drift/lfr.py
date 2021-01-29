@@ -28,7 +28,7 @@ METRICS_FUNCTION_MAPPING = {
 
 class LFR(DriftDetector):
 
-    def __init__(self, time_decay = 0.9, warn_level = 0.01, detect_level = 0.00001, max_samples: int = None):
+    def __init__(self, time_decay = 0.9, warn_level = 0.01, detect_level = 0.00001, max_samples: int = None, burn_in: int = 50):
         super().__init__()
         # default values affected by init_bucket()
         self.time_decay = time_decay
@@ -39,10 +39,8 @@ class LFR(DriftDetector):
                         for metric_name in ['tpr', 'tnr', 'ppv', 'npv']}
         
         self.confusion_matrix = metrics.ConfusionMatrix()
-        self.confusion_matrix.update(1,1)
-        self.confusion_matrix.update(0,0)
-        self.confusion_matrix.update(1,0)
-        self.confusion_matrix.update(0,1)
+        self.reset_confusion_matrix()
+        self.burn_in = burn_in
         self.idx = 0
         self.warnings = []
         self.detections = []
@@ -80,10 +78,10 @@ class LFR(DriftDetector):
             elif all([not warning for warning in self.warnings]) and self.warn_time is not None:
                 self.warn_time = None
             
-            if any(self.detections) and self.idx>50:
+            if any(self.detections) and self.idx> self.burn_in:
                 self.detections = []
                 if self.concept_time_shifts:
-                    if self.concept_time_shifts[-1] + 50 < self.idx:
+                    if self.concept_time_shifts[-1] + self.burn_in < self.idx:
                         self.concept_time_shifts.append(self.idx)
                         for metric in self.metrics.values():
                             metric.reset_internals()
