@@ -13,12 +13,12 @@ from river import neighbors
 import itertools
 
 streams = []
-max_samples = 500
+max_samples = 5000
 lfr_metric = LFR(max_samples = max_samples, burn_in=50)
 
 for x in range(1):
     # base negative
-    streams.append(synth.RandomRBFDrift(n_classes=2, n_features=1, change_speed=1, n_drift_centroids=1, n_centroids=1, class_weights=[1,0]))
+    streams.append(synth.RandomRBFDrift(n_classes=2, n_features=1, change_speed=0.5, n_drift_centroids=1, n_centroids=1, class_weights=[1,0]))
     # base positive
     streams.append(synth.RandomRBFDrift(n_classes=2, n_features=1, change_speed=0, n_drift_centroids=1, n_centroids=1, class_weights=[0,1]))
     # drift negative
@@ -32,7 +32,7 @@ for x in range(1):
     # drift positive
     streams.append(synth.RandomRBFDrift(n_classes=2, n_features=1, change_speed=0, n_drift_centroids=1, n_centroids=1, class_weights=[0,1]))
 
-X_y = synth.PredictionInfluenceStream(stream= streams, weight_incorrect=1.01, weight_correct=0.99, weight_update = 1, weight = [1,1,0,0,0,0])
+X_y = synth.PredictionInfluenceStream(stream= streams, weight_incorrect=1.02, weight_correct=0.98, weight_update = 1, weight = [1,1,0,0,0,0])
 
 # gen = synth.ConceptDriftStream(stream=synth.SEA(seed=42, variant=0),
                                 # drift_stream=synth.SEA(seed=42, variant=1),
