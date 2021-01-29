@@ -48,11 +48,7 @@ class SRPClassifier(base.WrapperMixin, base.EnsembleMixin, base.Classifier):
         Drift detector.
     warning_detector
         Warning detector.
-<<<<<<< HEAD
-    disable_detector:
-=======
     disable_detector
->>>>>>> upstream/master
         Option to disable drift detectors:<br/>
         * If `'off'`, detectors are enabled.<br/>
         * If `'drift'`, disables concept drift detection and the background learner.<br/>
@@ -88,13 +84,8 @@ class SRPClassifier(base.WrapperMixin, base.EnsembleMixin, base.Classifier):
     ... )
     >>> metric = metrics.Accuracy()
 
-<<<<<<< HEAD
-    >>> evaluate.progressive_val_score(dataset, model, metric)
-    Accuracy: 71.17%
-=======
     >>> evaluate.progressive_val_score(dataset, model, metric)  # doctest: +SKIP
     Accuracy: 70.97%
->>>>>>> upstream/master
 
     References
     ----------
@@ -495,13 +486,9 @@ class StreamingRandomPatchesBaseLearner:
 
         return self.model.predict_proba_one(x_subset)
 
-<<<<<<< HEAD
-    def _trigger_warning(self, all_features, n_samples_seen: int, rng: np.random.Generator):
-=======
     def _trigger_warning(
         self, all_features, n_samples_seen: int, rng: np.random.Generator
     ):
->>>>>>> upstream/master
         # Randomly generate a new subspace from all the original features
         subspace = (
             None
@@ -528,8 +515,6 @@ class StreamingRandomPatchesBaseLearner:
         self.warning_detector = self.warning_detector.clone()
 
     def reset(self, all_features: list, n_samples_seen: int, rng: np.random.Generator):
-<<<<<<< HEAD
-=======
         # Randomly generate a new subspace from all the original features
         subspace = (
             None
@@ -538,7 +523,6 @@ class StreamingRandomPatchesBaseLearner:
                 all_features=all_features, k=len(self.features), rng=rng
             )
         )
->>>>>>> upstream/master
 
         if not self.disable_background_learner and self._background_learner is not None:
             # Replace model with the corresponding background model
@@ -555,13 +539,9 @@ class StreamingRandomPatchesBaseLearner:
             subspace = (
                 None
                 if self.features is None
-<<<<<<< HEAD
-                else random_subspace(all_features=all_features, k=len(self.features), rng=rng)
-=======
                 else random_subspace(
                     all_features=all_features, k=len(self.features), rng=rng
                 )
->>>>>>> upstream/master
             )
             # Reset model
             self.model = self.model.clone()
