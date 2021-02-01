@@ -50,6 +50,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
     pos_yvalues = [[]] * 19
     neg_yvalues = [[]] * 19
     pos_xvalues, neg_xvalues = [],[]
+
     drift_detector_positive = drift.ADWIN()
     drift_detector_negative = drift.ADWIN()
     mini_batch_x, mini_batch_y = [], []
@@ -89,6 +90,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             if y_pred == 0 and y == 0:
                 # true negative
                 TN.append(x)
+
             if y == 1: 
                 key_number = 0
                 for key, value in x.items():
@@ -97,11 +99,12 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                     pos_xvalues.append(n_total_answers)
                     if drift_detector_positive.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
-                        print(f'Change detected in positive at index {i} on feature {key}')
+                        print(f'Change detected in positivily classified at index {i} on feature {key}')
                         drift_detector_positive.reset()
                     # only check first feature for now
                     key_number += 1
                     break
+
             if y == 0:
                 key_number = 0
                 for key, value in x.items():
@@ -110,7 +113,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                     neg_xvalues.append(n_total_answers)
                     if drift_detector_negative.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
-                        print(f'Change detected  in negative instances at index {i} on feature {key}')
+                        print(f'Change detected  in negativily classified instances at index {i} on feature {key}')
                         drift_detector_negative.reset()
                     # only check first feature for now
                     key_number += 1
