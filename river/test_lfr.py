@@ -7,14 +7,16 @@ from river import tree
 from river import compose
 from river import optim
 from river import datasets
-from river import linear_model
+# from river import linear_model
+from sklearn import linear_model
 from river.drift import LFR
 from river import neighbors
+from river import compat
 import itertools
 
 streams = []
-max_samples = 5000
-lfr_metric = LFR(max_samples = max_samples, burn_in=50)
+max_samples = 3000
+lfr_metric = LFR(max_samples = max_samples, burn_in=50, detect_level = 0.000001)
 
 for x in range(1):
     # base negative
@@ -51,7 +53,9 @@ metric = metrics.Accuracy()
 #     seed=0
 # )
 model = preprocessing.StandardScaler() 
-model |= linear_model.ALMAClassifier()
+# model |= linear_model.ALMAClassifier()
+
+model |= compat.convert_sklearn_to_river(estimator=linear_model.SGDClassifier(loss='log', eta0=0.01, learning_rate='constant'), classes=[0, 1])
 
 
 evaluate.evaluate_influential(X_y, model, max_samples = max_samples, metric = metric, print_every=1000, drift_detection= lfr_metric)

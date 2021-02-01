@@ -765,11 +765,7 @@ class AdaptiveRandomForestRegressor(BaseForest, base.Regressor):
         max_features="sqrt",
         aggregation_method: str = "median",
         lambda_value: int = 6,
-<<<<<<< HEAD
-        metric: RegressionMetric = MSE(),
-=======
         metric: metrics.RegressionMetric = metrics.MSE(),
->>>>>>> upstream/master
         disable_weighted_vote=True,
         drift_detector: base.DriftDetector = ADWIN(0.001),
         warning_detector: base.DriftDetector = ADWIN(0.01),
