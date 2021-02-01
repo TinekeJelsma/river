@@ -78,7 +78,7 @@ class LFR(DriftDetector):
             elif all([not warning for warning in self.warnings]) and self.warn_time is not None:
                 self.warn_time = None
             
-            if any(self.detections) and self.idx> self.burn_in:
+            if any(self.detections) and self.idx > self.burn_in:
                 self.detections = []
                 if self.concept_time_shifts:
                     if self.concept_time_shifts[-1] + self.burn_in < self.idx:

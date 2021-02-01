@@ -2,6 +2,7 @@ import datetime as dt
 import time
 import typing
 import numpy as np
+import pandas as pd
 from river import base
 from river import metrics
 from river import utils
@@ -40,6 +41,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
     preds = {}
     chunk_tracker = 0
     cm = metrics.ConfusionMatrix()
+    batch_size = 200
 
     TP, FP, FN, TN = [], [], [], []
     cm_values = [TP, FP, FN, TN]
@@ -51,19 +53,20 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
 
     drift_detector_positive = drift.ADWIN()
     drift_detector_negative = drift.ADWIN()
-    drift_detector = drift.ADWIN() 
-
+    mini_batch_x, mini_batch_y = [], []
     n_total_answers = 0
     if show_time:
         start = time.perf_counter()
 
     for i, x, y in stream.simulate_qa(dataset, moment, delay, copy=True):
-
+        
         # Question
         if y is None:
             preds[i] = pred_func(x=x)
             continue
-
+        if n_total_answers > batch_size:
+            mini_batch_x.append(x)
+            mini_batch_y.append(y)
         # Answer
         y_pred = preds.pop(i)
         if y_pred != {} and y_pred is not None:
@@ -115,18 +118,14 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                     # only check first feature for now
                     key_number += 1
                     break
-            for key, value in x.items():
-                    drift_detector.update(value)   # Data is processed one sample at a time
-                    pos_yvalues.append(float(value))
-                    pos_xvalues.append(n_total_answers)
-                    if drift_detector_negative.change_detected:
-                        # The drift detector indicates after each sample if there is a drift in the data
-                        print(f'Change detected in all instances at index {i} on feature {key}')
-                        drift_detector.reset()
-                    # only check first feature for now
-                    break
-
-        model.learn_one(x=x, y=y)
+        if n_total_answers % batch_size == 0 and n_total_answers > 2*batch_size:
+            mini_batch_y = pd.Series(mini_batch_y)
+            mini_batch_x = pd.DataFrame(mini_batch_x)      
+            model.learn_many(X=mini_batch_x, y=mini_batch_y)
+            mini_batch_x, mini_batch_y = [], []
+        
+        if n_total_answers < batch_size:
+            model.learn_one(x=x, y=y)
 
         # Update the answer counter
         n_total_answers += 1
