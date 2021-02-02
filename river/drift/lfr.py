@@ -67,8 +67,9 @@ class LFR(DriftDetector):
             warn_shift = (r_hat <= lb_warn) or (r_hat >= ub_warn)
             detect_shift = (r_hat <= lb_detect) or (r_hat >= ub_detect)
 
-            self.warnings.append(warn_shift)
-            self.detections.append(detect_shift)
+            if self.idx > self.burn_in:
+                self.warnings.append(warn_shift)
+                self.detections.append(detect_shift)
 
             print("Sample %i: metric %s, R: %.3f, Warn LB: %.3f Warn UB: %.3f, Detect LB: %.3f, Detect UB: %.3f, warn: %s detect: %s"
                       % (self.idx, metric.metric_name, r_hat, lb_warn, ub_warn, lb_detect, ub_detect, warn_shift, detect_shift))
