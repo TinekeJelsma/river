@@ -16,9 +16,11 @@ from river import drift
 __all__ = ['evaluate_influential']
 
 
-def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Metric,
+def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metric: metrics.Metric,
+                         hidden_metric: metrics.Metric,
                          drift_detection: drift.LFR = None,
                          batch_size: int = 1,
+                         hidden_batch_size: int = 1,
                          moment: typing.Union[str, typing.Callable] = None,
                          delay: typing.Union[str, int, dt.timedelta, typing.Callable] = None,
                          print_every=0, max_samples: int = 100, comparison_block: int = 100,
@@ -29,15 +31,21 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
     if not metric.works_with(model):
         raise ValueError(f'{metric.__class__.__name__} metric is not compatible with {model}')
 
+    if not metric.works_with(hidden_model):
+        raise ValueError(f'{metric.__class__.__name__} metric is not compatible with {hidden_model}')
+
     # Determine if predict_one or predict_proba_one should be used in case of a classifier
     pred_func = model.predict_one
+    hidden_pred_func = hidden_model.predict_one
     if utils.inspect.isclassifier(model) and not metric.requires_labels:
         pred_func = model.predict_proba_one
+        hidden_pred_func = hidden_model.predict_proba_one
 
     # def is_categorical(array_like):
     #    return array_like.dtype.name == 'category'
 
     preds = {}
+    hidden_preds = {}
     chunk_tracker = 0
     cm = metrics.ConfusionMatrix()
     TP, FP, FN, TN = [], [], [], []
@@ -52,6 +60,9 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
     drift_detector_negative = drift.ADWIN()
     if batch_size > 1:
         mini_batch_x, mini_batch_y = [], []
+
+    if hidden_batch_size > 1:
+        hidden_mini_batch_x, hidden_mini_batch_y = [], []
     n_total_answers = 0
     if show_time:
         start = time.perf_counter()
@@ -61,14 +72,20 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
         # Question
         if y is None:
             preds[i] = pred_func(x=x)
+            hidden_preds[i] = hidden_pred_func(x=x)
             continue
         if n_total_answers > batch_size > 1:
             mini_batch_x.append(x)
             mini_batch_y.append(y)
+        if n_total_answers > hidden_batch_size > 1:
+            hidden_mini_batch_x.append(x)
+            hidden_mini_batch_y.append(y)
         # Answer
         y_pred = preds.pop(i)
+        hidden_y_pred = hidden_preds.pop(i)
         if y_pred != {} and y_pred is not None:
             metric.update(y_true=y, y_pred=y_pred)
+            hidden_metric.update(y_true=y, y_pred=hidden_y_pred)
             if drift_detection is not None:
                 drift_detection.update(y_true=y, y_pred=y_pred)
             cm.update(y, y_pred)
@@ -121,14 +138,25 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             mini_batch_x = pd.DataFrame(mini_batch_x)
             model.learn_many(X=mini_batch_x, y=mini_batch_y)
             mini_batch_x, mini_batch_y = [], []
+        
+        if n_total_answers % hidden_batch_size == 0 and n_total_answers > 2 * hidden_batch_size and hidden_batch_size is not 1:
+            hidden_mini_batch_y = pd.Series(hidden_mini_batch_y)
+            hidden_mini_batch_x = pd.DataFrame(hidden_mini_batch_x)
+            model.learn_many(X=hidden_mini_batch_x, y=hidden_mini_batch_y)
+            hidden_mini_batch_x, hidden_mini_batch_y = [], []
 
         if n_total_answers < batch_size or batch_size == 1:
             model.learn_one(x=x, y=y)
+            # hidden_model.learn_one(x=x, y=y)
+        
+        if n_total_answers < hidden_batch_size or hidden_batch_size == 1:
+            # hidden_model.learn_one(x=x, y=y)
+            hidden_model.learn_one(x=x, y=y)
 
         # Update the answer counter
         n_total_answers += 1
         if print_every and not n_total_answers % print_every:
-            msg = f'[{n_total_answers:,d}] {metric}'
+            msg = f'[{n_total_answers:,d}] {metric} {hidden_metric}'
             if show_time:
                 now = time.perf_counter()
                 msg += f' – {dt.timedelta(seconds=int(now - start))}'
@@ -252,6 +280,6 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             if isinstance(dataset, PredictionInfluenceStream):
                 print(dataset.weight)
             # print("hist_info: ", hist_info)
-            return metric
+            return metric, hidden_metric
 
-    return metric
+    return metric, hidden_metric
