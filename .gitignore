@@ -114,3 +114,6 @@ package.json
 
 # ASV
 benchmarks/.asv
+
+# lending club
+./datasets/lending_club.csv.zip

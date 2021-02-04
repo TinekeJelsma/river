@@ -40,6 +40,7 @@ class PredictionInfluenceStream(base.SyntheticDataset):
         self.cache = []
         self.influence_method = influence_method
         self.n_streams = len(stream)
+        self.n_features = stream[0].n_features
         self.seed = seed
         self.source_stream = []
         self.idx = 0
@@ -69,7 +70,6 @@ class PredictionInfluenceStream(base.SyntheticDataset):
         rng = check_random_state(self.seed)
         sample_idx = 0
         n_streams = list(range(self.n_streams))
-        print("n_streams: ", n_streams)
         instance_generator = []
         for i in range(self.n_streams):
             instance_generator.append(iter(self.stream[i]))
@@ -84,7 +84,7 @@ class PredictionInfluenceStream(base.SyntheticDataset):
             # self.weight = [float(i) / max(self.weight) for i in self.weight]
             sample_idx += 1
             # probability = random.choices(n_streams, self.weight)
-            if sample_idx < 1000:
+            if sample_idx < 100:
                 probability = random.choices(list(range(2)), normalized_weights[0:2])
             else:
                 probability = random.choices(n_streams, normalized_weights)
@@ -133,8 +133,8 @@ class PredictionInfluenceStream(base.SyntheticDataset):
         if self.idx % self.weight_update == 0:
             self.weight = self.temp_weight.copy()
         self.idx += 1
-        if any((x > 0 and x < 0.2) for x in self.weight) and self.idx > 1000:
-            self.add_concept(border=0.2, new=0.3)
+        if any((x > 0 and x < 0.2) for x in self.weight) and self.idx > 50:
+            self.add_concept(border = 0.2, new = 0.5)
 
     def add_concept(self, border=0.01, new=0.1):
         for stream in range(self.n_streams):

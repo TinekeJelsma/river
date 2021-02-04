@@ -2,11 +2,13 @@ import datetime as dt
 import time
 import typing
 import numpy as np
+import pandas as pd
 from river import base
 from river import metrics
 from river import utils
 from river import stream
 from river.datasets.synth.prediction_influenced_stream import PredictionInfluenceStream
+from river.drift import LFR
 from scipy.stats import ranksums
 import matplotlib.pyplot as plt
 from river import drift
@@ -14,54 +16,83 @@ from river import drift
 __all__ = ['evaluate_influential']
 
 
-def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Metric,
+def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metric: metrics.Metric,
+                         hidden_metric: metrics.Metric,
+                         drift_detection: drift.LFR = None,
+                         hidden_drift_detection: drift.LFR = None,
+                         batch_size: int = 1,
+                         hidden_batch_size: int = 1,
                          moment: typing.Union[str, typing.Callable] = None,
                          delay: typing.Union[str, int, dt.timedelta, typing.Callable] = None,
                          print_every=0, max_samples: int = 100, comparison_block: int = 100,
                          prior: int = 1, intervals: int = 6, show_time=False, show_memory=False,
                          **print_kwargs) -> metrics.Metric:
     # Check that the model and the metric are in accordance
+
     if not metric.works_with(model):
         raise ValueError(f'{metric.__class__.__name__} metric is not compatible with {model}')
 
+    if not metric.works_with(hidden_model):
+        raise ValueError(f'{metric.__class__.__name__} metric is not compatible with {hidden_model}')
+
     # Determine if predict_one or predict_proba_one should be used in case of a classifier
     pred_func = model.predict_one
+    hidden_pred_func = hidden_model.predict_one
     if utils.inspect.isclassifier(model) and not metric.requires_labels:
         pred_func = model.predict_proba_one
+        hidden_pred_func = hidden_model.predict_proba_one
 
     # def is_categorical(array_like):
     #    return array_like.dtype.name == 'category'
-
+    base_x = [0,1,2]
+    hidden_x = [3,4]
     preds = {}
+    hidden_preds = {}
     chunk_tracker = 0
     cm = metrics.ConfusionMatrix()
-
     TP, FP, FN, TN = [], [], [], []
     cm_values = [TP, FP, FN, TN]
     cm_names = ['TP', 'FP', 'FN', 'TN']
     hist_info = {}
-    pos_yvalues, pos_xvalues, neg_yvalues, neg_xvalues, xvalues, yvalues = [], [], [], [], [], []
+
+    drift_detector = drift.ADWIN()
+    pos_yvalues =  [[] for _ in range(5)]  
+    neg_yvalues =  [[] for _ in range(5)]  
+    pos_xvalues, neg_xvalues = [], []
+
     drift_detector_positive = drift.ADWIN()
     drift_detector_negative = drift.ADWIN()
-    drift_detector = drift.ADWIN()
-    pvaluePos = []
-    pvalueNeg = []
+    if batch_size > 1:
+        mini_batch_x, mini_batch_y = [], []
 
+    if hidden_batch_size > 1:
+        hidden_mini_batch_x, hidden_mini_batch_y = [], []
     n_total_answers = 0
     if show_time:
         start = time.perf_counter()
 
     for i, x, y in stream.simulate_qa(dataset, moment, delay, copy=True):
-
+        [base_x, hidden_x] = map(lambda keys: {y: x[y] for y in keys}, [base_x, hidden_x])
         # Question
         if y is None:
-            preds[i] = pred_func(x=x)
+            preds[i] = pred_func(x=base_x)
+            hidden_preds[i] = hidden_pred_func(x=hidden_x)
             continue
-
+        if n_total_answers > batch_size > 1:
+            mini_batch_x.append(base_x)
+            mini_batch_y.append(y)
+        if n_total_answers > hidden_batch_size > 1:
+            hidden_mini_batch_x.append(hidden_x)
+            hidden_mini_batch_y.append(y)
         # Answer
         y_pred = preds.pop(i)
+        hidden_y_pred = hidden_preds.pop(i)
         if y_pred != {} and y_pred is not None:
             metric.update(y_true=y, y_pred=y_pred)
+            hidden_metric.update(y_true=y, y_pred=hidden_y_pred)
+            if drift_detection is not None:
+                drift_detection.update(y_true=y, y_pred=y_pred)
+                hidden_drift_detection.update(y_true= y, y_pred=hidden_y_pred)
             cm.update(y, y_pred)
             if isinstance(dataset, PredictionInfluenceStream):
                 dataset.receive_feedback(y_true=y, y_pred=y_pred, x_features=x)
@@ -79,45 +110,58 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             if y_pred == 0 and y == 0:
                 # true negative
                 TN.append(x)
-            if y_pred == 1:
+
+            if y == 1:
+                key_number = 0
                 for key, value in x.items():
                     drift_detector_positive.update(value)  # Data is processed one sample at a time
-                    pos_yvalues.append(float(value))
-                    pos_xvalues.append(n_total_answers)
+                    pos_yvalues[key_number].append(float(value))
+                    if key_number == 0:
+                        pos_xvalues.append(n_total_answers)
                     if drift_detector_positive.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
                         print(f'Change detected in positively classified at index {i} on feature {key}')
                         drift_detector_positive.reset()
                     # only check first feature for now
-                    break
-            if y_pred == 0:
+                    key_number += 1
+
+            if y == 0:
+                key_number = 0
                 for key, value in x.items():
                     drift_detector_negative.update(value)  # Data is processed one sample at a time
-                    neg_yvalues.append(float(value))
-                    neg_xvalues.append(n_total_answers)
+                    neg_yvalues[key_number].append(float(value))
+                    if key_number == 0:
+                        neg_xvalues.append(n_total_answers)
                     if drift_detector_negative.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
                         print(f'Change detected  in negatively classified instances at index {i} on feature {key}')
                         drift_detector_negative.reset()
                     # only check first feature for now
-                    break
-            for key, value in x.items():
-                drift_detector.update(value)  # Data is processed one sample at a time
-                yvalues.append(float(value))
-                xvalues.append(n_total_answers)
-                if drift_detector_negative.change_detected:
-                    # The drift detector indicates after each sample if there is a drift in the data
-                    print(f'Change detected in all instances at index {i} on feature {key}')
-                    drift_detector.reset()
-                # only check first feature for now
-                break
+                    key_number += 1
+        if n_total_answers % batch_size == 0 and n_total_answers > 2 * batch_size and batch_size is not 1:
+            mini_batch_y = pd.Series(mini_batch_y)
+            mini_batch_x = pd.DataFrame(mini_batch_x)
+            model.learn_many(X=mini_batch_x, y=mini_batch_y)
+            mini_batch_x, mini_batch_y = [], []
+        
+        if n_total_answers % hidden_batch_size == 0 and n_total_answers > 2 * hidden_batch_size and hidden_batch_size is not 1:
+            hidden_mini_batch_y = pd.Series(hidden_mini_batch_y)
+            hidden_mini_batch_x = pd.DataFrame(hidden_mini_batch_x)
+            model.learn_many(X=hidden_mini_batch_x, y=hidden_mini_batch_y)
+            hidden_mini_batch_x, hidden_mini_batch_y = [], []
 
-        model.learn_one(x=x, y=y)
+        if n_total_answers < batch_size or batch_size == 1:
+            model.learn_one(x=base_x, y=y)
+            # hidden_model.learn_one(x=x, y=y)
+        
+        if n_total_answers < hidden_batch_size or hidden_batch_size == 1:
+            # hidden_model.learn_one(x=x, y=y)
+            hidden_model.learn_one(x=hidden_x, y=y)
 
         # Update the answer counter
         n_total_answers += 1
         if print_every and not n_total_answers % print_every:
-            msg = f'[{n_total_answers:,d}] {metric}'
+            msg = f'[{n_total_answers:,d}] {metric} {hidden_metric}'
             if show_time:
                 now = time.perf_counter()
                 msg += f' – {dt.timedelta(seconds=int(now - start))}'
@@ -131,6 +175,9 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             feature_number = 0
             for feature in feature_names:
                 index = 0
+                # if hasattr(dataset, "feature_names"):
+                #     feature = dataset.feature_names[feature]
+                #     print(dataset.feature_names)
                 for cm_value in cm_values:
                     feature_values = [value.get(feature) for value in cm_value]
                     values, counts = np.unique(feature_values, return_counts=True)
@@ -163,10 +210,9 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             TP, FP, FN, TN = [], [], [], []
             cm_values = [TP, FP, FN, TN]
 
-        if chunk_tracker >= 2 and n_total_answers % comparison_block == 0:
+        if chunk_tracker >= 2 and n_total_answers % comparison_block == 0 and drift_detection is None:
             # this means we can start comparing the densities
             first_chunk = chunk_tracker - 2
-
             second_chunk = chunk_tracker - 1
             vars()['comparison' + str(first_chunk)] = {}
             names = ['TP-', 'FP-', 'FN-', 'TN-']
@@ -190,23 +236,31 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             comparison = vars()['comparison' + str(first_chunk)]
 
             # compare density of TP and FN, and TN and FP
-            for feature in range(len(x)):
-                print('feature: ', feature)
-                if 'TP-' + str(feature) in comparison and 'FN-' + str(feature) in comparison:
-                    test = ranksums(comparison['TP-' + str(feature)].get('subset'),
-                                    comparison['FN-' + str(feature)].get('subset'))
-                    print('p value TP FN ', test.pvalue)
-                    pvaluePos.append(test.pvalue)
-                    if test.pvalue < 0.01:
-                        print(f'significance pos at {comparison_block*chunk_tracker}')
-                if 'TN-' + str(feature) in comparison and 'FP-' + str(feature) in comparison:
-                    test = ranksums(comparison['TN-' + str(feature)].get('subset'),
-                                    comparison['FP-' + str(feature)].get('subset'))
-                    if test.pvalue < 0.01:
-                        print(f'significance neg at {comparison_block*chunk_tracker}')
-                    print('p value TN FP ', test.pvalue)
-                    pvalueNeg.append(test.pvalue)
+            # for feature in range(len(x)):
+            #     print('feature: ', feature)
+            #     if 'TP-' + str(feature) in comparison and 'FN-' + str(feature) in comparison:
+            #         test = ranksums(comparison['TP-' + str(feature)].get('subset'),
+            #                         comparison['FN-' + str(feature)].get('subset'))
+            #         print('p value TP FN ', test.pvalue)
+            #         pvaluePos.append(test.pvalue)
+            #         if test.pvalue < 0.01:
+            #             print(f'significance pos at {comparison_block*chunk_tracker}')
+            #     if 'TN-' + str(feature) in comparison and 'FP-' + str(feature) in comparison:
+            #         test = ranksums(comparison['TN-' + str(feature)].get('subset'),
+            #                         comparison['FP-' + str(feature)].get('subset'))
+            #         if test.pvalue < 0.01:
+            #             print(f'significance neg at {comparison_block*chunk_tracker}')
+            #         print('p value TN FP ', test.pvalue)
+            #         pvalueNeg.append(test.pvalue)
 
+            # for feature in range(len(x)):
+            #     print('feature: ', feature)
+            #     if 'TP-' + str(feature) in comparison and 'FN-' + str(feature) in comparison:
+            #         test = ranksums(comparison['TP-' + str(feature)].get('subset'), comparison['FN-' + str(feature)].get('subset'))
+            #         print('p value TP FN ', test.pvalue)
+            #     if 'TN-' + str(feature) in comparison and 'FP-' + str(feature) in comparison:
+            #         test = ranksums(comparison['TN-' + str(feature)].get('subset'), comparison['FP-' + str(feature)].get('subset'))
+            #         print('p value TN FP ', test.pvalue)
 
             # visualize the distribution of data in hists:
             # for classification in names:
@@ -227,17 +281,14 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                     # plt.bar(edges_second_chunk[:-1], count_second_chunk, width = 0.2, color='b')
                     # plt.show()
         if n_total_answers == max_samples:
-            # plt.plot(pos_xvalues, pos_yvalues)
-            fig, axes = plt.subplots(nrows=1, ncols=3, figsize=(5, 3))
-            axes[0].plot(pos_xvalues, pos_yvalues)
-            axes[1].plot(neg_xvalues, neg_yvalues)
-            axes[2].plot(xvalues, yvalues)
-
-            axes[0].title.set_text('Positively classified instances')
-            axes[1].title.set_text('Negatively classified instances')
-            axes[2].title.set_text('All instances')
-            plt.show()
-            plt.close()
+            for i in range(len(x)):
+                fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(5, 3))
+                axes[0].plot(pos_xvalues, pos_yvalues[i], label=f'values feature {i}')
+                axes[1].plot(neg_xvalues, neg_yvalues[i], label=f'values feature {i}')
+                axes[0].title.set_text('Positive instances')
+                axes[1].title.set_text('Negative instances')
+                plt.legend()
+                plt.show()
 
             if isinstance(dataset, PredictionInfluenceStream):
                 plt.plot(dataset.weight_tracker)
@@ -246,17 +297,17 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                 plt.show()
 
             # chunks size
-            x = list(range(comparison_block*2, comparison_block*(chunk_tracker+1), comparison_block))
-            plt.plot(x, pvalueNeg, label="p values for negative instances")
-            plt.plot(x, pvaluePos, label='p values for positive instances')
-            plt.legend()
-            plt.show()
+            # x = list(range(comparison_block*2, comparison_block*(chunk_tracker+1), comparison_block))
+            # plt.plot(x, pvalueNeg, label="p values for negative instances")
+            # plt.plot(x, pvaluePos, label='p values for positive instances')
+            # plt.legend()
+            # plt.show()
 
         if n_total_answers >= max_samples:
             print(cm)
             if isinstance(dataset, PredictionInfluenceStream):
                 print(dataset.weight)
             # print("hist_info: ", hist_info)
-            return metric
+            return metric, hidden_metric
 
-    return metric
+    return metric, hidden_metric
