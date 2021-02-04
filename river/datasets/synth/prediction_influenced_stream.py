@@ -85,7 +85,7 @@ class PredictionInfluenceStream(base.SyntheticDataset):
             # self.weight = [float(i) / max(self.weight) for i in self.weight]
             sample_idx += 1
             # probability = random.choices(n_streams, self.weight)
-            if sample_idx < 1000:
+            if sample_idx < 100:
                 probability = random.choices(list(range(2)), normalized_weights[0:2])
             else:
                 probability = random.choices(n_streams, normalized_weights)

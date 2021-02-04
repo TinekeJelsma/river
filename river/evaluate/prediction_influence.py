@@ -19,6 +19,7 @@ __all__ = ['evaluate_influential']
 def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metric: metrics.Metric,
                          hidden_metric: metrics.Metric,
                          drift_detection: drift.LFR = None,
+                         hidden_drift_detection: drift.LFR = None,
                          batch_size: int = 1,
                          hidden_batch_size: int = 1,
                          moment: typing.Union[str, typing.Callable] = None,
@@ -43,7 +44,8 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
 
     # def is_categorical(array_like):
     #    return array_like.dtype.name == 'category'
-
+    base_x = [0,1,2]
+    hidden_x = [3,4]
     preds = {}
     hidden_preds = {}
     chunk_tracker = 0
@@ -52,8 +54,8 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
     cm_values = [TP, FP, FN, TN]
     cm_names = ['TP', 'FP', 'FN', 'TN']
     hist_info = {}
-    pos_yvalues = [[]] * 19
-    neg_yvalues = [[]] * 19
+    pos_yvalues =  [[] for _ in range(5)]  
+    neg_yvalues =  [[] for _ in range(5)]  
     pos_xvalues, neg_xvalues = [], []
 
     drift_detector_positive = drift.ADWIN()
@@ -68,17 +70,17 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
         start = time.perf_counter()
 
     for i, x, y in stream.simulate_qa(dataset, moment, delay, copy=True):
-
+        [base_x, hidden_x] = map(lambda keys: {y: x[y] for y in keys}, [base_x, hidden_x])
         # Question
         if y is None:
-            preds[i] = pred_func(x=x)
-            hidden_preds[i] = hidden_pred_func(x=x)
+            preds[i] = pred_func(x=base_x)
+            hidden_preds[i] = hidden_pred_func(x=hidden_x)
             continue
         if n_total_answers > batch_size > 1:
-            mini_batch_x.append(x)
+            mini_batch_x.append(base_x)
             mini_batch_y.append(y)
         if n_total_answers > hidden_batch_size > 1:
-            hidden_mini_batch_x.append(x)
+            hidden_mini_batch_x.append(hidden_x)
             hidden_mini_batch_y.append(y)
         # Answer
         y_pred = preds.pop(i)
@@ -88,6 +90,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
             hidden_metric.update(y_true=y, y_pred=hidden_y_pred)
             if drift_detection is not None:
                 drift_detection.update(y_true=y, y_pred=y_pred)
+                hidden_drift_detection.update(y_true= y, y_pred=hidden_y_pred)
             cm.update(y, y_pred)
             if isinstance(dataset, PredictionInfluenceStream):
                 dataset.receive_feedback(y_true=y, y_pred=y_pred, x_features=x)
@@ -111,28 +114,28 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
                 for key, value in x.items():
                     drift_detector_positive.update(value)  # Data is processed one sample at a time
                     pos_yvalues[key_number].append(float(value))
-                    pos_xvalues.append(n_total_answers)
+                    if key_number == 0:
+                        pos_xvalues.append(n_total_answers)
                     if drift_detector_positive.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
                         print(f'Change detected in positivily classified at index {i} on feature {key}')
                         drift_detector_positive.reset()
                     # only check first feature for now
                     key_number += 1
-                    break
 
             if y == 0:
                 key_number = 0
                 for key, value in x.items():
                     drift_detector_negative.update(value)  # Data is processed one sample at a time
                     neg_yvalues[key_number].append(float(value))
-                    neg_xvalues.append(n_total_answers)
+                    if key_number == 0:
+                        neg_xvalues.append(n_total_answers)
                     if drift_detector_negative.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
                         print(f'Change detected  in negativily classified instances at index {i} on feature {key}')
                         drift_detector_negative.reset()
                     # only check first feature for now
                     key_number += 1
-                    break
         if n_total_answers % batch_size == 0 and n_total_answers > 2 * batch_size and batch_size is not 1:
             mini_batch_y = pd.Series(mini_batch_y)
             mini_batch_x = pd.DataFrame(mini_batch_x)
@@ -146,12 +149,12 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
             hidden_mini_batch_x, hidden_mini_batch_y = [], []
 
         if n_total_answers < batch_size or batch_size == 1:
-            model.learn_one(x=x, y=y)
+            model.learn_one(x=base_x, y=y)
             # hidden_model.learn_one(x=x, y=y)
         
         if n_total_answers < hidden_batch_size or hidden_batch_size == 1:
             # hidden_model.learn_one(x=x, y=y)
-            hidden_model.learn_one(x=x, y=y)
+            hidden_model.learn_one(x=hidden_x, y=y)
 
         # Update the answer counter
         n_total_answers += 1
@@ -267,13 +270,14 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
                 axes[1].title.set_text('Negative instances')
                 plt.legend()
                 plt.show()
-            plt.close()
 
             if isinstance(dataset, PredictionInfluenceStream):
                 plt.plot(dataset.weight_tracker)
                 plt.legend(['base negative', 'base positive', 'drift negative', 'drift positive', 'drift negative 2',
                             'drift positive 2'], loc=0)
                 plt.show()
+                plt.close()
+
 
         if n_total_answers >= max_samples:
             print(cm)
