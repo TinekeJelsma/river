@@ -44,8 +44,8 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
 
     # def is_categorical(array_like):
     #    return array_like.dtype.name == 'category'
-    base_x = [0,1,2]
-    hidden_x = [3,4]
+    base_x = [0]
+    hidden_x = [1]
     preds = {}
     hidden_preds = {}
     chunk_tracker = 0
@@ -58,6 +58,8 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
     drift_detector = drift.ADWIN()
     pos_yvalues =  [[] for _ in range(5)]  
     neg_yvalues =  [[] for _ in range(5)]  
+    pvaluePos =  [[] for _ in range(5)]  
+    pvalueNeg =  [[] for _ in range(5)]
     pos_xvalues, neg_xvalues = [], []
 
     drift_detector_positive = drift.ADWIN()
@@ -122,7 +124,6 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
                         # The drift detector indicates after each sample if there is a drift in the data
                         print(f'Change detected in positively classified at index {i} on feature {key}')
                         drift_detector_positive.reset()
-                    # only check first feature for now
                     key_number += 1
 
             if y == 0:
@@ -136,26 +137,23 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
                         # The drift detector indicates after each sample if there is a drift in the data
                         print(f'Change detected  in negatively classified instances at index {i} on feature {key}')
                         drift_detector_negative.reset()
-                    # only check first feature for now
                     key_number += 1
-        if n_total_answers % batch_size == 0 and n_total_answers > 2 * batch_size and batch_size is not 1:
+        if n_total_answers % batch_size == 0 and n_total_answers >= 2 * batch_size and batch_size != 1:
             mini_batch_y = pd.Series(mini_batch_y)
             mini_batch_x = pd.DataFrame(mini_batch_x)
             model.learn_many(X=mini_batch_x, y=mini_batch_y)
             mini_batch_x, mini_batch_y = [], []
         
-        if n_total_answers % hidden_batch_size == 0 and n_total_answers > 2 * hidden_batch_size and hidden_batch_size is not 1:
+        if n_total_answers % hidden_batch_size == 0 and n_total_answers >= 2 * hidden_batch_size and hidden_batch_size != 1:
             hidden_mini_batch_y = pd.Series(hidden_mini_batch_y)
             hidden_mini_batch_x = pd.DataFrame(hidden_mini_batch_x)
-            model.learn_many(X=hidden_mini_batch_x, y=hidden_mini_batch_y)
+            hidden_model.learn_many(X=hidden_mini_batch_x, y=hidden_mini_batch_y)
             hidden_mini_batch_x, hidden_mini_batch_y = [], []
 
         if n_total_answers < batch_size or batch_size == 1:
             model.learn_one(x=base_x, y=y)
-            # hidden_model.learn_one(x=x, y=y)
         
         if n_total_answers < hidden_batch_size or hidden_batch_size == 1:
-            # hidden_model.learn_one(x=x, y=y)
             hidden_model.learn_one(x=hidden_x, y=y)
 
         # Update the answer counter
@@ -236,22 +234,22 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
             comparison = vars()['comparison' + str(first_chunk)]
 
             # compare density of TP and FN, and TN and FP
-            # for feature in range(len(x)):
-            #     print('feature: ', feature)
-            #     if 'TP-' + str(feature) in comparison and 'FN-' + str(feature) in comparison:
-            #         test = ranksums(comparison['TP-' + str(feature)].get('subset'),
-            #                         comparison['FN-' + str(feature)].get('subset'))
-            #         print('p value TP FN ', test.pvalue)
-            #         pvaluePos.append(test.pvalue)
-            #         if test.pvalue < 0.01:
-            #             print(f'significance pos at {comparison_block*chunk_tracker}')
-            #     if 'TN-' + str(feature) in comparison and 'FP-' + str(feature) in comparison:
-            #         test = ranksums(comparison['TN-' + str(feature)].get('subset'),
-            #                         comparison['FP-' + str(feature)].get('subset'))
-            #         if test.pvalue < 0.01:
-            #             print(f'significance neg at {comparison_block*chunk_tracker}')
-            #         print('p value TN FP ', test.pvalue)
-            #         pvalueNeg.append(test.pvalue)
+            for feature in range(len(x)):
+                print('feature: ', feature)
+                if 'TP-' + str(feature) in comparison and 'FN-' + str(feature) in comparison:
+                    test = ranksums(comparison['TP-' + str(feature)].get('subset'),
+                                    comparison['FN-' + str(feature)].get('subset'))
+                    print('p value TP FN ', test.pvalue)
+                    pvaluePos[feature].append(test.pvalue)
+                    if test.pvalue < 0.01:
+                        print(f'significance pos at {comparison_block*chunk_tracker}')
+                if 'TN-' + str(feature) in comparison and 'FP-' + str(feature) in comparison:
+                    test = ranksums(comparison['TN-' + str(feature)].get('subset'),
+                                    comparison['FP-' + str(feature)].get('subset'))
+                    if test.pvalue < 0.01:
+                        print(f'significance neg at {comparison_block*chunk_tracker}')
+                    print('p value TN FP ', test.pvalue)
+                    pvalueNeg[feature].append(test.pvalue)
 
             # for feature in range(len(x)):
             #     print('feature: ', feature)
@@ -288,14 +286,13 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
                 axes[0].title.set_text('Positive instances')
                 axes[1].title.set_text('Negative instances')
                 plt.legend()
-                plt.show()
 
             if isinstance(dataset, PredictionInfluenceStream):
-                plt.plot(dataset.weight_tracker)
-                plt.legend(['base negative', 'base positive', 'drift negative', 'drift positive', 'drift negative 2',
+                fig, ax = plt.subplots()
+                ax.plot(dataset.weight_tracker)
+                ax.legend(['base negative', 'base positive', 'drift negative', 'drift positive', 'drift negative 2',
                             'drift positive 2'], loc=0)
-                plt.show()
-
+            plt.show()
             # chunks size
             # x = list(range(comparison_block*2, comparison_block*(chunk_tracker+1), comparison_block))
             # plt.plot(x, pvalueNeg, label="p values for negative instances")

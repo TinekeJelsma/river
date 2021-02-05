@@ -76,18 +76,17 @@ class PredictionInfluenceStream(base.SyntheticDataset):
 
         while True:
             # normalized_weights = [float(i) / max(self.weight) for i in self.weight]
-            pos_streams = self.weight[1::2]
-            pos_streams = [(float(i) / sum(pos_streams)) / 2 for i in pos_streams]
-            neg_streams = self.weight[0::2]
-            neg_streams = [(float(i) / sum(neg_streams)) / 2 for i in neg_streams]
-            normalized_weights = list(chain(*zip(neg_streams, pos_streams)))
-            # self.weight = [float(i) / max(self.weight) for i in self.weight]
+            # pos_streams = self.weight[1::2]
+            # pos_streams = [(float(i) / sum(pos_streams)) / 2 for i in pos_streams]
+            # neg_streams = self.weight[0::2]
+            # neg_streams = [(float(i) / sum(neg_streams)) / 2 for i in neg_streams]
+            # normalized_weights = list(chain(*zip(neg_streams, pos_streams)))
+            normalized_weights = [float(i) / max(self.weight) for i in self.weight]
             sample_idx += 1
-            # probability = random.choices(n_streams, self.weight)
-            if sample_idx < 100:
-                probability = random.choices(list(range(2)), normalized_weights[0:2])
-            else:
-                probability = random.choices(n_streams, normalized_weights)
+            # if sample_idx < 500:
+            #     probability = random.choices(list(range(2)), normalized_weights[0:2])
+            # else:
+            probability = random.choices(n_streams, normalized_weights)
             current_stream = probability[0]
             # print('current stream: ', current_stream)
             self.source_stream.append(current_stream)
