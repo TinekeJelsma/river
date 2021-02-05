@@ -14,8 +14,8 @@ import itertools
 
 streams = []
 max_samples = 5000
-n_features = 2
-n_centroids = 5
+n_features = 1
+n_centroids = 1
 
 for x in range(5):
     # negative

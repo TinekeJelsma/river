@@ -17,7 +17,7 @@ import itertools
 from river import compose
 
 streams = []
-max_samples = 1500
+max_samples = 500
 lfr_metric = LFR(max_samples=max_samples, burn_in=50)
 n_features = 5
 n_centroids = 5
@@ -30,8 +30,8 @@ for x in range(3):
     streams.append(synth.RandomRBFDrift(n_classes=2, n_features=n_features, change_speed=0, n_drift_centroids=1, n_centroids=n_centroids,
                                         class_weights=[0, 1]))
 
-X_y = synth.PredictionInfluenceStream(stream=streams, weight_incorrect=0.98, weight_correct=1.02, weight_update=1,
-                                      weight=[1, 1, 1, 1, 1, 1])
+X_y = synth.PredictionInfluenceStream(stream=streams, weight_incorrect=1.02, weight_correct=0.98, weight_update=1,
+                                      weight=[1, 1, 0, 0, 0, 0])
 
 metric = metrics.Accuracy()
 

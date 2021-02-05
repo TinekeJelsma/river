@@ -240,7 +240,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
         if n_total_answers >= max_samples:
             print(cm)
             if isinstance(dataset, PredictionInfluenceStream):
-                print(dataset.weight)
+                print(dataset.stream_weight)
             return metric
 
     return metric
