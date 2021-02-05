@@ -16,12 +16,9 @@ from river import drift
 __all__ = ['evaluate_influential']
 
 
-def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metric: metrics.Metric,
-                         hidden_metric: metrics.Metric,
+def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Metric,
                          drift_detection: drift.LFR = None,
-                         hidden_drift_detection: drift.LFR = None,
                          batch_size: int = 1,
-                         hidden_batch_size: int = 1,
                          moment: typing.Union[str, typing.Callable] = None,
                          delay: typing.Union[str, int, dt.timedelta, typing.Callable] = None,
                          print_every=0, max_samples: int = 100, comparison_block: int = 100,
@@ -32,22 +29,12 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
     if not metric.works_with(model):
         raise ValueError(f'{metric.__class__.__name__} metric is not compatible with {model}')
 
-    if not metric.works_with(hidden_model):
-        raise ValueError(f'{metric.__class__.__name__} metric is not compatible with {hidden_model}')
-
     # Determine if predict_one or predict_proba_one should be used in case of a classifier
     pred_func = model.predict_one
-    hidden_pred_func = hidden_model.predict_one
     if utils.inspect.isclassifier(model) and not metric.requires_labels:
         pred_func = model.predict_proba_one
-        hidden_pred_func = hidden_model.predict_proba_one
 
-    # def is_categorical(array_like):
-    #    return array_like.dtype.name == 'category'
-    base_x = [0]
-    hidden_x = [1]
     preds = {}
-    hidden_preds = {}
     chunk_tracker = 0
     cm = metrics.ConfusionMatrix()
     TP, FP, FN, TN = [], [], [], []
@@ -55,7 +42,6 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
     cm_names = ['TP', 'FP', 'FN', 'TN']
     hist_info = {}
 
-    drift_detector = drift.ADWIN()
     pos_yvalues =  [[] for _ in range(5)]  
     neg_yvalues =  [[] for _ in range(5)]  
     pvaluePos =  [[] for _ in range(5)]  
@@ -67,39 +53,31 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
     if batch_size > 1:
         mini_batch_x, mini_batch_y = [], []
 
-    if hidden_batch_size > 1:
-        hidden_mini_batch_x, hidden_mini_batch_y = [], []
     n_total_answers = 0
     if show_time:
         start = time.perf_counter()
 
     for i, x, y in stream.simulate_qa(dataset, moment, delay, copy=True):
-        [base_x, hidden_x] = map(lambda keys: {y: x[y] for y in keys}, [base_x, hidden_x])
         # Question
         if y is None:
-            preds[i] = pred_func(x=base_x)
-            hidden_preds[i] = hidden_pred_func(x=hidden_x)
+            preds[i] = pred_func(x=x)
             continue
         if n_total_answers > batch_size > 1:
-            mini_batch_x.append(base_x)
+            mini_batch_x.append(x)
             mini_batch_y.append(y)
-        if n_total_answers > hidden_batch_size > 1:
-            hidden_mini_batch_x.append(hidden_x)
-            hidden_mini_batch_y.append(y)
+
         # Answer
         y_pred = preds.pop(i)
-        hidden_y_pred = hidden_preds.pop(i)
         if y_pred != {} and y_pred is not None:
             metric.update(y_true=y, y_pred=y_pred)
-            hidden_metric.update(y_true=y, y_pred=hidden_y_pred)
             if drift_detection is not None:
+                # if we use LFR, now update LFR
                 drift_detection.update(y_true=y, y_pred=y_pred)
-                hidden_drift_detection.update(y_true= y, y_pred=hidden_y_pred)
             cm.update(y, y_pred)
             if isinstance(dataset, PredictionInfluenceStream):
+                # update weights of stream based on classification
                 dataset.receive_feedback(y_true=y, y_pred=y_pred, x_features=x)
-                # print(dataset.weight)
-                # put feature values in 4 bins (cm bins)
+            # put feature values in 4 bins (cm bins)
             if y_pred == 1 and y == 1:
                 # true positive
                 TP.append(x)
@@ -119,6 +97,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
                     drift_detector_positive.update(value)  # Data is processed one sample at a time
                     pos_yvalues[key_number].append(float(value))
                     if key_number == 0:
+                        # we only need to store the index of positive instance once
                         pos_xvalues.append(n_total_answers)
                     if drift_detector_positive.change_detected:
                         # The drift detector indicates after each sample if there is a drift in the data
@@ -138,28 +117,22 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
                         print(f'Change detected  in negatively classified instances at index {i} on feature {key}')
                         drift_detector_negative.reset()
                     key_number += 1
+
+        if n_total_answers < batch_size or batch_size == 1:
+            # if the model learns online, learn one, or when the index is below the first batch size, learn one
+            model.learn_one(x=x, y=y)
+
         if n_total_answers % batch_size == 0 and n_total_answers >= 2 * batch_size and batch_size != 1:
+            # learn many if batch size is bigger than 0, transform the batch in series and df
             mini_batch_y = pd.Series(mini_batch_y)
             mini_batch_x = pd.DataFrame(mini_batch_x)
             model.learn_many(X=mini_batch_x, y=mini_batch_y)
-            mini_batch_x, mini_batch_y = [], []
-        
-        if n_total_answers % hidden_batch_size == 0 and n_total_answers >= 2 * hidden_batch_size and hidden_batch_size != 1:
-            hidden_mini_batch_y = pd.Series(hidden_mini_batch_y)
-            hidden_mini_batch_x = pd.DataFrame(hidden_mini_batch_x)
-            hidden_model.learn_many(X=hidden_mini_batch_x, y=hidden_mini_batch_y)
-            hidden_mini_batch_x, hidden_mini_batch_y = [], []
-
-        if n_total_answers < batch_size or batch_size == 1:
-            model.learn_one(x=base_x, y=y)
-        
-        if n_total_answers < hidden_batch_size or hidden_batch_size == 1:
-            hidden_model.learn_one(x=hidden_x, y=y)
+            mini_batch_x, mini_batch_y = [], []        
 
         # Update the answer counter
         n_total_answers += 1
         if print_every and not n_total_answers % print_every:
-            msg = f'[{n_total_answers:,d}] {metric} {hidden_metric}'
+            msg = f'[{n_total_answers:,d}] {metric}'
             if show_time:
                 now = time.perf_counter()
                 msg += f' – {dt.timedelta(seconds=int(now - start))}'
@@ -173,9 +146,6 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
             feature_number = 0
             for feature in feature_names:
                 index = 0
-                # if hasattr(dataset, "feature_names"):
-                #     feature = dataset.feature_names[feature]
-                #     print(dataset.feature_names)
                 for cm_value in cm_values:
                     feature_values = [value.get(feature) for value in cm_value]
                     values, counts = np.unique(feature_values, return_counts=True)
@@ -198,8 +168,6 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
                         hist_info[dict_name]['feature'] = feature_number
                         hist_info[dict_name]['counts'] = counts
                         hist_info[dict_name]['edges'] = edges
-                        # plt.hist(feature_values, bins = intervals)
-                        # plt.show()
                     index += 1
                 feature_number += 1
 
@@ -221,6 +189,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
                     count_first_chunk = np.array(hist_info[name_first].get('counts') + prior)
                     count_second_chunk = np.array(hist_info[name_second].get('counts') + prior)
                     if len(count_first_chunk) == 0 or len(count_second_chunk) == 0:
+                        # if any bin is empty, we cannot compare
                         continue
                     densities = count_second_chunk - count_first_chunk
                     densities = densities / count_first_chunk
@@ -230,7 +199,6 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
                     name = classification + str(feature)
                     vars()['comparison' + str(first_chunk)][name] = {}
                     vars()['comparison' + str(first_chunk)][name]['subset'] = subset
-            # print(vars()['comparison' + str(first_chunk)])
             comparison = vars()['comparison' + str(first_chunk)]
 
             # compare density of TP and FN, and TN and FP
@@ -251,34 +219,8 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
                     print('p value TN FP ', test.pvalue)
                     pvalueNeg[feature].append(test.pvalue)
 
-            # for feature in range(len(x)):
-            #     print('feature: ', feature)
-            #     if 'TP-' + str(feature) in comparison and 'FN-' + str(feature) in comparison:
-            #         test = ranksums(comparison['TP-' + str(feature)].get('subset'), comparison['FN-' + str(feature)].get('subset'))
-            #         print('p value TP FN ', test.pvalue)
-            #     if 'TN-' + str(feature) in comparison and 'FP-' + str(feature) in comparison:
-            #         test = ranksums(comparison['TN-' + str(feature)].get('subset'), comparison['FP-' + str(feature)].get('subset'))
-            #         print('p value TN FP ', test.pvalue)
-
-            # visualize the distribution of data in hists:
-            # for classification in names:
-            #     for feature in range(len(x)):
-            #         name_first = classification + str(first_chunk) + '-' + str(feature)
-            #         name_second = classification + str(second_chunk) + '-' + str(feature)
-            #         count_first_chunk = np.array(hist_info[name_first].get('counts') + prior)
-            #         count_second_chunk = hist_info[name_second].get('counts') + prior
-            #         edges_first_chunk = hist_info[name_first].get('edges')
-            #         edges_second_chunk = hist_info[name_second].get('edges')
-                    # fig, (ax1, ax2) = plt.subplots(1, 2)
-                    # title = classification + "feature" + str(feature)
-                    # # ax1.bar(edges_first_chunk[:-1], count_first_chunk, width=1, color='green')
-                    # # ax2.bar(edges_second_chunk[:-1], count_second_chunk, width = 1, color='blue')
-                    # # fig.suptitle(title)
-                    # plt.suptitle(title)
-                    # plt.bar(edges_first_chunk[:-1]-0.2, count_first_chunk, width=0.2, color='g')
-                    # plt.bar(edges_second_chunk[:-1], count_second_chunk, width = 0.2, color='b')
-                    # plt.show()
         if n_total_answers == max_samples:
+            # visualize the feature space in plots
             for i in range(len(x)):
                 fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(5, 3))
                 axes[0].plot(pos_xvalues, pos_yvalues[i], label=f'values feature {i}')
@@ -287,24 +229,18 @@ def evaluate_influential(dataset: base.typing.Stream, model, hidden_model, metri
                 axes[1].title.set_text('Negative instances')
                 plt.legend()
 
+            # if data stream is prediction influence stream, show the weights of the streams
             if isinstance(dataset, PredictionInfluenceStream):
                 fig, ax = plt.subplots()
                 ax.plot(dataset.weight_tracker)
-                ax.legend(['base negative', 'base positive', 'drift negative', 'drift positive', 'drift negative 2',
-                            'drift positive 2'], loc=0)
+                # ax.legend(['base negative', 'base positive', 'drift negative', 'drift positive', 'drift negative 2',
+                #             'drift positive 2'], loc=0)
             plt.show()
-            # chunks size
-            # x = list(range(comparison_block*2, comparison_block*(chunk_tracker+1), comparison_block))
-            # plt.plot(x, pvalueNeg, label="p values for negative instances")
-            # plt.plot(x, pvaluePos, label='p values for positive instances')
-            # plt.legend()
-            # plt.show()
 
         if n_total_answers >= max_samples:
             print(cm)
             if isinstance(dataset, PredictionInfluenceStream):
                 print(dataset.weight)
-            # print("hist_info: ", hist_info)
-            return metric, hidden_metric
+            return metric
 
-    return metric, hidden_metric
+    return metric

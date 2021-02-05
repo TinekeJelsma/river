@@ -48,7 +48,6 @@ class LFR(DriftDetector):
         self.bounds_table = BoundTable(self.time_decay, self.warn_level, self.detect_level, self.max_samples)
         self.concept_time_shifts = []
         self.after_detection = 0
-        self.first_detection = False
     
     def reset_confusion_matrix(self):
         self.confusion_matrix.reset()
@@ -59,11 +58,9 @@ class LFR(DriftDetector):
     
     def update(self, y_true, y_pred):
         self.confusion_matrix.update(y_true, y_pred)
-        # print(self.confusion_matrix)
         for metric in self.metrics.values():
             n, p_hat, r_hat = metric.update_metric(self.confusion_matrix, y_true, y_pred)
             lb_warn, ub_warn, lb_detect, ub_detect = self.bounds_table.get_bounds(n, p_hat)
-            # lb_detect, ub_detect = self.generate_bounds(n, p_hat, alpha=self.detect_level)
             warn_shift = (r_hat <= lb_warn) or (r_hat >= ub_warn)
             detect_shift = (r_hat <= lb_detect) or (r_hat >= ub_detect)
 
@@ -97,13 +94,11 @@ class LFR(DriftDetector):
     def show_metric(self):
         fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(5, 3))
         for metric in self.metrics.values():
-            axes[0].plot(metric._P, label = f'P {metric.metric_name}')
+            axes[0].plot(metric._P, label = f'{metric.metric_name}')
             axes[0].title.set_text('P rate throughout time')
             axes[0].legend()
-            # print(f'{metric.metric_name} P: {metric._P}')
-            # print(f'{metric.metric_name} R: {metric._R}')
         for metric in self.metrics.values():
-            axes[1].plot(metric._R, label = f'R {metric.metric_name}')
+            axes[1].plot(metric._R, label = f'{metric.metric_name}')
             axes[1].title.set_text('R rate throughout time')
             axes[1].legend()
         plt.show()
@@ -176,8 +171,6 @@ class BoundTable(object):
             bound_dict = pickle.load(open(f'{self.filename}.pkl', 'rb'))
         else:
             bound_dict = self.create_table()
-        # print(f'bound table: {bound_dict}')
-        # print(f'N = {n} p_hat = {p_hat}')
         if n not in bound_dict:
             bound_dict = self.update_table(bound_dict, n, p_hat)
         ub_detect = bound_dict[n][p_hat].get('ub_detect')

@@ -30,8 +30,8 @@ class PredictionInfluenceStream(base.SyntheticDataset):
         if hasattr(stream[0], 'feature_names'):
             self.feature_names = stream[0].feature_names
         self.stream = stream
-        self.temp_weight = []
-        self.weight = weight
+        self.current_stream_weight = []
+        self.stream_weight = weight
         self.weight_update = weight_update
         self.weight_tracker = []
         self.last_stream = None
@@ -44,29 +44,23 @@ class PredictionInfluenceStream(base.SyntheticDataset):
         self.seed = seed
         self.source_stream = []
         self.idx = 0
-        self.flag1 = False
-        self.flag2 = False
 
         self.set_weight()
         self.set_influence_method()
 
     def set_weight(self):
-        if self.weight is None:
+        if self.stream_weight is None:
             counter = len(self.stream)
-            start = [1] * counter
-            self.weight = [1] * counter
-            self.weight_tracker = [start]
-            self.temp_weight = [1] * counter
-        else:
-            self.weight = self.weight
-            self.temp_weight = self.weight.copy()
-            self.weight_tracker = [self.weight.copy()]
+            self.stream_weight = [1] * counter
+        self.current_stream_weight = self.stream_weight.copy()
+        self.weight_tracker = [self.stream_weight.copy()]
 
     def set_influence_method(self):
         if self.influence_method != "multiplication" and self.influence_method != "addition":
             self.influence_method = "multiplication"
 
     def __iter__(self):
+        # This function decides from which stream the next sample should be chosen.
         rng = check_random_state(self.seed)
         sample_idx = 0
         n_streams = list(range(self.n_streams))
@@ -75,21 +69,12 @@ class PredictionInfluenceStream(base.SyntheticDataset):
             instance_generator.append(iter(self.stream[i]))
 
         while True:
-            # normalized_weights = [float(i) / max(self.weight) for i in self.weight]
-            # pos_streams = self.weight[1::2]
-            # pos_streams = [(float(i) / sum(pos_streams)) / 2 for i in pos_streams]
-            # neg_streams = self.weight[0::2]
-            # neg_streams = [(float(i) / sum(neg_streams)) / 2 for i in neg_streams]
-            # normalized_weights = list(chain(*zip(neg_streams, pos_streams)))
-            normalized_weights = [float(i) / max(self.weight) for i in self.weight]
-            sample_idx += 1
-            # if sample_idx < 500:
-            #     probability = random.choices(list(range(2)), normalized_weights[0:2])
-            # else:
+            # normalize all weights and then choose the stream for new instance.
+            normalized_weights = [float(i) / max(self.stream_weight) for i in self.stream_weight]
             probability = random.choices(n_streams, normalized_weights)
             current_stream = probability[0]
-            # print('current stream: ', current_stream)
             self.source_stream.append(current_stream)
+            sample_idx += 1
             try:
                 x, y = next(instance_generator[current_stream])
             except StopIteration:
@@ -98,7 +83,6 @@ class PredictionInfluenceStream(base.SyntheticDataset):
 
     def receive_feedback(self, y_true, y_pred, x_features):
         if isinstance(y_true, int):
-            # and isinstance(y_pred, int)
             y_true, y_pred, x_features = [y_true], [y_pred], [x_features]
         for i in range(len(y_true)):
             if y_true[i] is not None:
@@ -120,30 +104,34 @@ class PredictionInfluenceStream(base.SyntheticDataset):
     def receive_feedback_update(self, y_true, y_pred, stream):
         if y_true == y_pred:
             if self.influence_method == "multiplication":
-                self.temp_weight[stream] = self.temp_weight[stream] * self.weight_correct
+                self.current_stream_weight[stream] = self.current_stream_weight[stream] * self.weight_correct
             else:
-                self.temp_weight[stream] = self.temp_weight[stream] + self.weight_correct
+                self.current_stream_weight[stream] = self.current_stream_weight[stream] + self.weight_correct
         else:
             if self.influence_method == "multiplication":
-                self.temp_weight[stream] = self.temp_weight[stream] * self.weight_incorrect
+                self.current_stream_weight[stream] = self.current_stream_weight[stream] * self.weight_incorrect
             else:
-                self.temp_weight[stream] = self.temp_weight[stream] + self.weight_incorrect
-        self.weight_tracker.append(self.weight.copy())
+                self.current_stream_weight[stream] = self.current_stream_weight[stream] + self.weight_incorrect
+        self.weight_tracker.append(self.stream_weight.copy())
+        # if weight of streams should be updated, then set the stream_weight to curren_stream_weight
         if self.idx % self.weight_update == 0:
-            self.weight = self.temp_weight.copy()
+            self.stream_weight = self.current_stream_weight.copy()
         self.idx += 1
-        if any((x > 0 and x < 0.2) for x in self.weight) and self.idx > 50:
+        if any((x > 0 and x < 0.2) for x in self.stream_weight) and self.idx > 50:
+            # if there is a stream with a weight between 0 and 0.2 and the classifier has 
+            # classified more than 50 instance, we can add a new concept which starts with a weight of 0.5
             self.add_concept(border = 0.2, new = 0.5)
 
     def add_concept(self, border=0.01, new=0.1):
         for stream in range(self.n_streams):
-            if self.temp_weight[stream] < border and self.temp_weight[stream] > 0 and (stream + 2) < self.n_streams:
-                if self.temp_weight[stream + 2] == 0:
-                    self.temp_weight[stream + 2] = new
-            elif self.temp_weight[stream] < border and self.temp_weight[stream] > 0 and (stream + 2) >= self.n_streams:
-                if self.temp_weight[stream - self.n_streams + 2] == 0:
+            # the new concept stream is always the stream that is 2 places further and should not be introduced yet (currently weight of 0)
+            if self.current_stream_weight[stream] < border and self.current_stream_weight[stream] > 0 and (stream + 2) < self.n_streams:
+                if self.current_stream_weight[stream + 2] == 0:
+                    self.current_stream_weight[stream + 2] = new
+            elif self.current_stream_weight[stream] < border and self.current_stream_weight[stream] > 0 and (stream + 2) >= self.n_streams:
+                if self.current_stream_weight[stream - self.n_streams + 2] == 0:
                     stream_number = stream - self.n_streams + 2
-                    self.temp_weight[stream_number] = new
+                    self.current_stream_weight[stream_number] = new
 
     def __repr__(self):
         params = self._get_params()
