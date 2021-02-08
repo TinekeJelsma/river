@@ -19,7 +19,8 @@ class PredictionInfluenceStream(base.SyntheticDataset):
                  weight_correct=0.99,
                  weight_incorrect=1.01,
                  influence_method="multiplication",
-                 weight_update: int = 1):
+                 weight_update: int = 1,
+                 weight_update_delay: int = 1):
         # Fairly simple check for consistent number of features
         if len(stream) > 1 and stream[0].n_features != stream[1].n_features:
             raise AttributeError(f"Inconsistent number of features between "
@@ -32,8 +33,10 @@ class PredictionInfluenceStream(base.SyntheticDataset):
         self.stream = stream
         self.current_stream_weight = []
         self.stream_weight = weight
+        self.start_weight = weight
         self.weight_update = weight_update
         self.weight_tracker = []
+        self.weight_update_delay = weight_update_delay
         self.last_stream = None
         self.weight_correct = weight_correct
         self.weight_incorrect = weight_incorrect
@@ -70,7 +73,10 @@ class PredictionInfluenceStream(base.SyntheticDataset):
 
         while True:
             # normalize all weights and then choose the stream for new instance.
-            normalized_weights = [float(i) / max(self.stream_weight) for i in self.stream_weight]
+            if len(self.weight_tracker) > self.weight_update_delay:
+                normalized_weights = [float(i) / max(self.weight_tracker[-self.weight_update_delay]) for i in self.weight_tracker[-self.weight_update_delay]]
+            else:
+                normalized_weights = [float(i) / max(self.weight_tracker[0]) for i in self.weight_tracker[0]]
             probability = random.choices(n_streams, normalized_weights)
             current_stream = probability[0]
             self.source_stream.append(current_stream)
@@ -114,7 +120,7 @@ class PredictionInfluenceStream(base.SyntheticDataset):
                 self.current_stream_weight[stream] = self.current_stream_weight[stream] + self.weight_incorrect
         self.weight_tracker.append(self.stream_weight.copy())
         # if weight of streams should be updated, then set the stream_weight to curren_stream_weight
-        if self.idx % self.weight_update == 0:
+        if self.idx % self.weight_update == 0 and self.idx > 0:
             self.stream_weight = self.current_stream_weight.copy()
         self.idx += 1
         if any((x > 0 and x < 0.2) for x in self.stream_weight) and self.idx > 50:
