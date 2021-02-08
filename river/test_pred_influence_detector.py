@@ -13,16 +13,16 @@ from river import compat
 import itertools
 
 streams = []
-max_samples = 5000
-n_features = 1
-n_centroids = 1
+max_samples = 3000
+n_features = 5
+n_centroids = 5
 
 for x in range(5):
     # negative
-    streams.append(synth.RandomRBFDrift(n_classes=2, n_features=n_features, change_speed=0, n_drift_centroids=1, n_centroids=n_centroids,
+    streams.append(synth.RandomRBFDrift(n_classes=2, n_features=n_features, change_speed=1, n_drift_centroids=1, n_centroids=n_centroids,
                                         class_weights=[1, 0]))
     # positive
-    streams.append(synth.RandomRBFDrift(n_classes=2, n_features=n_features, change_speed=0, n_drift_centroids=1, n_centroids=n_centroids,
+    streams.append(synth.RandomRBFDrift(n_classes=2, n_features=n_features, change_speed=1, n_drift_centroids=1, n_centroids=n_centroids,
                                         class_weights=[0, 1]))
 
 X_y = synth.PredictionInfluenceStream(stream=streams, weight_incorrect=1.01, weight_correct=0.99, weight_update=1)
@@ -32,4 +32,4 @@ model |= compat.convert_sklearn_to_river(
 
 metric = metrics.Accuracy()
 
-evaluate.evaluate_influential(X_y, model= model, metric = metric, print_every=100, comparison_block = 1000, intervals = 8, max_samples=max_samples, prior = 1, batch_size=100)
+evaluate.evaluate_influential(X_y, model= model, metric = metric, print_every=100, comparison_block = 1000, intervals = 8, max_samples=max_samples, prior = 1, batch_size=500)

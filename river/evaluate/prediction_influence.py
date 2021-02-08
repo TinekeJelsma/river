@@ -1,4 +1,5 @@
 import datetime as dt
+from inspect import BoundArguments
 import time
 import typing
 import numpy as np
@@ -9,9 +10,13 @@ from river import utils
 from river import stream
 from river.datasets.synth.prediction_influenced_stream import PredictionInfluenceStream
 from river.drift import LFR
-from scipy.stats import ranksums
+from scipy.stats import ranksums, kstest
 import matplotlib.pyplot as plt
 from river import drift
+from sklearn.neighbors import KernelDensity
+from sklearn.model_selection import GridSearchCV
+
+
 
 __all__ = ['evaluate_influential']
 
@@ -148,7 +153,6 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                 index = 0
                 for cm_value in cm_values:
                     feature_values = [value.get(feature) for value in cm_value]
-                    values, counts = np.unique(feature_values, return_counts=True)
                     if all(isinstance(feature_value, str) for feature_value in feature_values):
                         # this is a categorical feature
                         dict_name = cm_names[index] + '-' + str(chunk_tracker) + '-' + str(feature_number)
@@ -156,18 +160,15 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                         hist_info[dict_name]['classification'] = cm_names[index]
                         hist_info[dict_name]['chunk'] = chunk_tracker
                         hist_info[dict_name]['feature'] = feature_number
-                        hist_info[dict_name]['counts'] = counts
-                        hist_info[dict_name]['edges'] = values
+                        hist_info[dict_name]['values'] = feature_values
                     else:
                         # this is a numerical feature
-                        counts, edges = np.histogram(feature_values, bins=intervals)
                         dict_name = cm_names[index] + '-' + str(chunk_tracker) + '-' + str(feature_number)
                         hist_info[dict_name] = {}
                         hist_info[dict_name]['classification'] = cm_names[index]
                         hist_info[dict_name]['chunk'] = chunk_tracker
                         hist_info[dict_name]['feature'] = feature_number
-                        hist_info[dict_name]['counts'] = counts
-                        hist_info[dict_name]['edges'] = edges
+                        hist_info[dict_name]['values'] = feature_values                   
                     index += 1
                 feature_number += 1
 
@@ -180,44 +181,48 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             # this means we can start comparing the densities
             first_chunk = chunk_tracker - 2
             second_chunk = chunk_tracker - 1
-            vars()['comparison' + str(first_chunk)] = {}
-            names = ['TP-', 'FP-', 'FN-', 'TN-']
-            for classification in names:
+            density_comparison = {}
+            for classification in cm_names:
                 for feature in range(len(x)):
-                    name_first = classification + str(first_chunk) + '-' + str(feature)
-                    name_second = classification + str(second_chunk) + '-' + str(feature)
-                    count_first_chunk = np.array(hist_info[name_first].get('counts') + prior)
-                    count_second_chunk = np.array(hist_info[name_second].get('counts') + prior)
-                    if len(count_first_chunk) == 0 or len(count_second_chunk) == 0:
-                        # if any bin is empty, we cannot compare
-                        continue
-                    densities = count_second_chunk - count_first_chunk
-                    densities = densities / count_first_chunk
-                    subset = []
-                    for bin in range(intervals):
-                        subset.extend([densities[bin]] * count_first_chunk[bin])
-                    name = classification + str(feature)
-                    vars()['comparison' + str(first_chunk)][name] = {}
-                    vars()['comparison' + str(first_chunk)][name]['subset'] = subset
-            comparison = vars()['comparison' + str(first_chunk)]
-
-            # compare density of TP and FN, and TN and FP
+                    name_first = classification + '-' + str(first_chunk) + '-' + str(feature)
+                    name_second = classification + '-' + str(second_chunk) + '-' + str(feature)
+                    first_dist = np.array(hist_info[name_first].get('values')).reshape(-1,1)
+                    second_dist = np.array(hist_info[name_second].get('values')).reshape(-1,1)
+                    if len(first_dist) > 10 and len(second_dist) > 1:
+                        params = {'bandwidth': np.logspace(-1, 1, 10)}
+                        grid = GridSearchCV(KernelDensity(), params)
+                        grid.fit(first_dist)
+                        kde = grid.best_estimator_
+                        # kde1 = KernelDensity(kernel='gaussian', bandwidth=0.75).fit(first_dist)
+                        log_dens = kde.score_samples(second_dist)
+                        band_width = grid.best_estimator_.bandwidth
+                    elif len(first_dist) > 1 and len(second_dist) > 1:
+                        kde1 = KernelDensity(kernel='gaussian', bandwidth=0.75).fit(first_dist)
+                        log_dens = kde1.score_samples(second_dist)
+                        band_width = 0.75
+                    else: 
+                        log_dens = None
+                        band_width = None
+                    density_comparison[name_first] = {}
+                    density_comparison[name_first] = {'score samples': log_dens, 'bandwidth': band_width}
+            
+            # compare TP and FN, and TN and FP
             for feature in range(len(x)):
-                print('feature: ', feature)
-                if 'TP-' + str(feature) in comparison and 'FN-' + str(feature) in comparison:
-                    test = ranksums(comparison['TP-' + str(feature)].get('subset'),
-                                    comparison['FN-' + str(feature)].get('subset'))
-                    print('p value TP FN ', test.pvalue)
-                    pvaluePos[feature].append(test.pvalue)
-                    if test.pvalue < 0.01:
-                        print(f'significance pos at {comparison_block*chunk_tracker}')
-                if 'TN-' + str(feature) in comparison and 'FP-' + str(feature) in comparison:
-                    test = ranksums(comparison['TN-' + str(feature)].get('subset'),
-                                    comparison['FP-' + str(feature)].get('subset'))
-                    if test.pvalue < 0.01:
-                        print(f'significance neg at {comparison_block*chunk_tracker}')
-                    print('p value TN FP ', test.pvalue)
-                    pvalueNeg[feature].append(test.pvalue)
+                TP_scores = 'TP-' + str(first_chunk) + '-' + str(feature)
+                FN_scores = 'FN-' + str(first_chunk) + '-' + str(feature)
+                if density_comparison[TP_scores].get('score samples') is not None and density_comparison[FN_scores].get('score samples') is not None:
+                    result = kstest(density_comparison[TP_scores].get('score samples'), density_comparison[FN_scores].get('score samples'))
+                    print(f'difference between TP and FN in feature {feature} is {result}')
+                else:
+                    print('something was non existent')
+
+                TN_scores = 'TN-' + str(first_chunk) + '-' + str(feature)
+                FP_scores = 'FP-' + str(first_chunk) + '-' + str(feature)
+                if density_comparison[TN_scores].get('score samples') is not None and density_comparison[FP_scores].get('score samples') is not None:
+                    result = kstest(density_comparison[TN_scores].get('score samples'), density_comparison[FP_scores].get('score samples'))
+                    print(f'difference between TN and FP in feature {feature} is {result}')
+                else:
+                    print('something was NOne')
 
         if n_total_answers == max_samples:
             # visualize the feature space in plots
