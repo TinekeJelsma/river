@@ -13,7 +13,7 @@ from river import compat
 import itertools
 
 streams = []
-max_samples = 10
+max_samples = 40
 n_features = 1
 n_centroids = 1
 
@@ -32,4 +32,4 @@ model |= compat.convert_sklearn_to_river(
 
 metric = metrics.ROCAUC()
 
-evaluate.evaluate_influential(X_y, model= model, metric = metric, print_every=100, comparison_block = 5, max_samples=max_samples, prior = 1, batch_size=1)
+evaluate.evaluate_influential(X_y, model= model, metric = metric, print_every=100, comparison_block = 20, max_samples=max_samples, prior = 1, batch_size=1)

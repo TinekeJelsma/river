@@ -106,6 +106,15 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
                         drift_detector_negative.reset()
                     key_number += 1
 
+        if len(cache.index) >= comparison_block:
+            cache['weight'] = (cache.index + 1) / comparison_block
+            subset = cache.loc[(cache['ytrue'] == y) & (cache['ypred'] == y_pred)]
+            feature0 = pd.json_normalize(subset['x'])[0].tolist()
+            train_x = np.array(feature0)
+            kde = KernelDensity(kernel='gaussian', bandwidth=0.5).fit(train_x[:, None])
+            score = kde.score_samples(np.array(x.get(0)).reshape(1, -1))
+            print(f'score = {score}')
+        
         # add instance to cache and remove too old instances
         if len(cache.index) < comparison_block:
             cache.loc[i] = pd.Series({'timestamp': i, 'x': x, 'ypred': y_pred, 'ytrue': y})
@@ -113,11 +122,7 @@ def evaluate_influential(dataset: base.typing.Stream, model, metric: metrics.Met
             index = i - comparison_block
             cache = cache.drop(index = index)
             cache.loc[i] = pd.Series({'timestamp': i, 'x': x, 'ypred': y_pred, 'ytrue': y})
-
-        # if y is not None and y_pred is not None:
-        subset = cache.loc[(cache['ytrue'] == y) & (cache['ypred'] == y_pred)]
-        print(f'subset = {subset}, and ypred = {y_pred} y = {y}')
-
+            cache = cache.reset_index(drop=True)
 
         if n_total_answers < batch_size or batch_size == 1:
             # if the model learns online, learn one, or when the index is below the first batch size, learn one
